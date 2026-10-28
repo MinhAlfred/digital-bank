@@ -1,2 +1,2 @@
 # digital-bank
-want to learn something relate to domain banking
+want to learn something related to domain banking

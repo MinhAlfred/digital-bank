@@ -1,0 +1,85 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: customer-service
+              uri: lb://customer-service
+              predicates:
+                - Path=/api/customers/**
+              filters:
+                - name: AuthFilter
+              metadata:
+                connect-timeout: 30000
+                response-timeout: 60000
+
+            - id: core-banking-service
+              uri: lb://core-banking-service
+              predicates:
+                - Path=/api/core/**
+              filters:
+                - name: AuthFilter
+
+            - id: notification-service
+              uri: lb://notification-service
+              predicates:
+                - Path=/api/notifications/**
+              filters:
+                - name: AuthFilter
+
+            - id: fraud-detection-service
+              uri: lb://fraud-detection-service
+              predicates:
+                - Path=/api/fraud/**
+              filters:
+                - name: AuthFilter
+
+            - id: analysis-service
+              uri: lb://analysis-service
+              predicates:
+                - Path=/api/analysis/**
+              filters:
+                - name: AuthFilter
+
+#      globalcors:
+#        cors-configurations:
+#          '[/**]':
+#            allowedOriginPatterns: '*'
+#            allowedMethods: '*'
+#            allowedHeaders: '*'
+#            allowCredentials: true
+    discovery:
+      client:
+        simple:
+          instances:
+            customer-service:
+              - uri: ${CUSTOMER_SERVICE_URI:http://localhost:4001}
+            core-banking-service:
+              - uri: ${CORE_BANKING_SERVICE_URI:http://localhost:4000}
+            notification-service:
+              - uri: ${NOTIFICATION_SERVICE_URI:http://localhost:4002}
+            fraud-detection-service:
+              - uri: ${FRAUD_DETECTION_SERVICE_URI:http://localhost:4003}
+            analysis-service:
+              - uri: ${ANALYSIS_SERVICE_URI:http://localhost:4004}
+
+
+jwt:
+  secret: youraccesstokensecretbase64encoded256bityouraccesstokensecretbase64encoded256bityouraccesstokensecretbase64encoded256bit
+gateway:
+  internal-secret: ${INTERNAL_SECRET:internal-secret}
+
+# Public endpoints ? kh�ng c?n JWT
+public:
+  endpoints:
+    - /api/users/auth/login
+    - /api/users/auth/register
+    - /api/users/auth/refresh
+    - /api/users/auth/google
+    - /api/users/auth/logout
+    - /ws
+server:
+  port: 3000
