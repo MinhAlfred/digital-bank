@@ -14,6 +14,8 @@
 
 ## Required configuration
 
+Apply this reference only to services using JPA/SQL. Do not add JPA/Hibernate settings to a gateway or an R2DBC-only service. Each service owns its schema/migrations; never query another service's tables.
+
 ```yaml
 spring:
   jpa:
@@ -40,7 +42,7 @@ spring:
 - Required shape: `protected` no-arg constructor (for JPA), a public constructor or static factory (`Order.create(...)`) that establishes valid state, `private` fields, getters only. **No public setters.** Change state through intention-revealing methods.
 - Annotations: `@Entity`, `@Table(name = "orders")` with an explicit table name (avoid SQL reserved words like `order`, `user`), `@Column(nullable = false, length = ...)` mirroring DB constraints.
 - Enums: `@Enumerated(EnumType.STRING)`. Never `ORDINAL`.
-- Money: `BigDecimal` with `@Column(precision = 19, scale = 4)`; currency in its own column.
+- Money: `BigDecimal` plus a currency column. Match `@Column(precision = ..., scale = ...)` and `NUMERIC/DECIMAL` to domain range/fractional precision; `(19, 4)` is only an example, not a universal currency scale. Validate/round deliberately before persistence. Existing minor-unit integers need a forward migration using the documented per-currency conversion factor; verify totals, boundaries and external contracts before rollout.
 - Time: `Instant` for timestamps (`timestamptz`), `LocalDate` for dates.
 - JSON columns: use Hibernate's `@JdbcTypeCode(SqlTypes.JSON)` on a record/map, sparingly.
 - Large text/blobs: `@Lob` avoided; use `text` columns or object storage.

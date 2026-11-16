@@ -63,7 +63,7 @@ Set the orchestrator's termination grace period higher than this timeout. Long j
 - Micrometer Tracing + OpenTelemetry bridge/exporter (OTLP). Propagation W3C `traceparent` is the default; keep it.
 - Trace id/span id are in the logging MDC automatically and returned in error responses.
 - Sampling probability configured per environment (`management.tracing.sampling.probability`), 100% only in dev.
-- Outbound `RestClient`/`@HttpExchange` clients must be created from the auto-configured builder (`RestClient.Builder`) so tracing and metrics instrumentation apply.
+- Outbound clients must use auto-configured builders (`RestClient.Builder` for blocking, `WebClient.Builder` for reactive; HTTP interfaces backed by the matching client) so tracing and metrics instrumentation apply.
 
 ## Logging in production
 
@@ -73,14 +73,14 @@ Set the orchestrator's termination grace period higher than this timeout. Long j
 
 ## Timeouts and connection pools
 
-- **Every outbound call has a timeout.** Defaults: connect 2s, read 5s unless justified; configure globally (`spring.http.client.*`) and override per client.
+- **Every outbound call has a timeout.** Starting values: connect 2s, read/response 5s, adjusted to the request deadline. Use target-version blocking-client properties or configure the reactive connector explicitly; include pool-acquisition limits and bounded in-flight work.
 - **HikariCP:** `maximum-pool-size` sized deliberately (rule of thumb: much smaller than request threads; start at 10-20 and measure), `connection-timeout` 2-5s, `max-lifetime` below the DB/proxy idle cutoff, `leak-detection-threshold` set in non-prod.
-- Server request limits, thread limits, and DB pool size are tuned together; with virtual threads the **DB pool is the concurrency limiter**.
+- Tune request/admission limits, thread/scheduler capacity and DB/client pools together. With virtual threads a DB pool bounds DB concurrency, not total admitted requests; also bound queues and upstream work. Reactive runtimes use their driver/client pools rather than HikariCP unless an explicit blocking adapter exists.
 - Database statement timeouts (`spring.jpa.properties.jakarta.persistence.query.timeout` or DB-side) for queries exposed to user input.
 
 ## Virtual threads
 
-- On Java 21+: `spring.threads.virtual.enabled=true` lets Tomcat and Spring's executors use virtual threads for blocking I/O code.
+- In supported blocking runtimes on Java 21+: `spring.threads.virtual.enabled=true` lets Tomcat and Spring's executors use virtual threads for blocking I/O code.
 - Do not pool virtual threads, do not rely on thread-locals holding large objects, avoid long `synchronized` blocks around blocking calls on Java 21-23 (pinning; largely fixed from Java 24). Prefer `ReentrantLock` when you must hold a lock across blocking I/O.
 - Measure before/after; keep platform-thread executors for CPU-bound work.
 
@@ -101,3 +101,6 @@ Set the orchestrator's termination grace period higher than this timeout. Long j
 - Database migrations run before/with the new version and are backward compatible with the previous app version (expand/contract) so rolling deploys work.
 - Every deploy is traceable: version, commit sha, build time in `/actuator/info`; changelog maintained.
 - Provide a `README` with run/test/deploy commands and an operations runbook (alerts, dashboards, common failures).
+## Per-service operations
+
+Keep each service independently configurable and observable: service identity in logs/traces/metrics, compatible API/event contracts and backward-compatible migrations. Propagate trace context across HTTP and message boundaries with configured instrumentation. WebFlux uses Reactor-aware context propagation; a virtual-thread switch does not alter Netty's event-loop model. Consumers stop accepting new work and handle in-flight acknowledgment/commit deliberately during shutdown.

@@ -44,7 +44,7 @@ Codes are `UPPER_SNAKE_CASE`, globally unique, never reused, never renamed once 
 
 ## Global exception handler
 
-Exactly **one** `@RestControllerAdvice` (`common/web/GlobalExceptionHandler`) extends `ResponseEntityExceptionHandler` and produces `ProblemDetail` for every error. See `13-code-templates.md` for the template. It must:
+For annotated MVC controllers, use one `common/web/GlobalExceptionHandler` extending servlet `ResponseEntityExceptionHandler`. WebFlux uses the reactive class with the same simple name and different signatures/exceptions; functional routes/gateways may need `WebExceptionHandler`/`ErrorWebExceptionHandler`. Security filter-chain failures require matching entry points/access-denied handlers. Keep one consistent ProblemDetail contract across these boundaries. See `13-code-templates.md` for the template. It must:
 
 1. Map `BusinessException` -> its status, `code`, `detail`, plus `traceId`.
 2. Override validation handling (`MethodArgumentNotValidException`, `HandlerMethodValidationException`, `ConstraintViolationException`) -> `400` with `code = VALIDATION_ERROR` and an `errors` list of field/message pairs.
@@ -104,7 +104,7 @@ logging:
       console: ecs        # or logstash / gelf, as the platform expects
 ```
 
-- Add business context to the MDC when useful (`orderId`, `customerId`, never PII) and clear it in `finally` (`try (var ignored = MDC.putCloseable("orderId", id))`).
+- In imperative code, add business context to the MDC when useful (`orderId`, `customerId`, never PII) and clear it in `finally` (`try (var ignored = MDC.putCloseable("orderId", id))`).
 - Local profile may use plain text output.
 - Log levels are set per package in `application.yml`; framework noise is kept at `WARN`.
 
@@ -116,3 +116,6 @@ Never log: passwords, tokens, API keys, session ids, full card numbers, national
 - Do not log `Authorization` headers; configure any request-logging filter to exclude headers and bodies by default.
 - Exception messages must not embed secrets or personal data; they may be returned to clients and stored in log systems.
 - Log injection: parameterized logging plus never logging raw user input in a way that allows newline forging (structured JSON output handles this).
+## Reactive logging context
+
+Use Reactor Context and configured Micrometer/context-propagation integration for WebFlux tracing. Thread-local MDC put/clear around publisher assembly does not carry context through asynchronous execution. Never log request headers/tokens while diagnosing a gateway; use trace id and sanitized outcome metadata.

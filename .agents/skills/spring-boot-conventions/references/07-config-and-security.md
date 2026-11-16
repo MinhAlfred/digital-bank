@@ -48,14 +48,14 @@ public record PaymentProperties(
 
 ## Spring Security setup
 
-Use the component-based configuration with a `SecurityFilterChain` bean and the lambda DSL. Never extend `WebSecurityConfigurerAdapter` (removed). Template in `13-code-templates.md`.
+For servlet applications use a `SecurityFilterChain` bean with `HttpSecurity` and the lambda DSL. For WebFlux use `SecurityWebFilterChain` with `ServerHttpSecurity`, reactive authentication/context and `@EnableReactiveMethodSecurity` when method security is needed. Do not mix the two stacks. Never extend `WebSecurityConfigurerAdapter` (removed). Template in `13-code-templates.md`.
 
 Rules:
 - **Deny by default:** `.anyRequest().authenticated()` is last; every public path is listed explicitly and minimal (`/actuator/health/**`, login, public docs if intended).
 - Stateless REST APIs: `SessionCreationPolicy.STATELESS`, OAuth2 Resource Server with JWT validation (issuer, audience, expiry, signature). CSRF may be disabled **only** for stateless token-authenticated APIs; any cookie/session-based flow keeps CSRF protection on.
 - Browser apps using cookies: `SameSite=Lax/Strict`, `Secure`, `HttpOnly`, CSRF tokens.
-- Enable method security (`@EnableMethodSecurity`) and use `@PreAuthorize` for coarse authorization (`hasAuthority('order:read')`). Prefer **authorities/permissions** over hard-coded role names in code.
-- CORS: configure one `CorsConfigurationSource` with an explicit allowlist of origins, methods, headers. Never `*` with credentials.
+- In servlet applications enable method security (`@EnableMethodSecurity`) and use `@PreAuthorize` for coarse authorization (`hasAuthority('order:read')`). Prefer **authorities/permissions** over hard-coded role names in code.
+- CORS: configure the runtime-appropriate `CorsConfigurationSource` with an explicit allowlist of origins, methods, headers. Never `*` with credentials.
 - Passwords: `PasswordEncoder` from `PasswordEncoderFactories.createDelegatingPasswordEncoder()` or Argon2/BCrypt explicitly; never MD5/SHA-1/plain; never roll your own.
 - Do not implement your own token/session/crypto scheme. Use library support (Spring Authorization Server, Keycloak, a cloud IdP).
 - Multiple chains (e.g. `/api/**` vs `/actuator/**`) use `@Order` and `securityMatcher`.
@@ -65,6 +65,8 @@ Rules:
 - Authentication answers "who"; authorization answers "may they". Both are enforced **server-side** on every request. Client-side checks are cosmetic.
 - Two layers of authorization: endpoint/method (`@PreAuthorize`) and **resource ownership** inside the service (fetch by id and owner, or check after load) to prevent IDOR/BOLA. A user-controlled id in the path or body is never proof of ownership.
 - Never return different errors for "does not exist" vs "not yours" if that reveals existence; prefer `404`.
+- Gateways strip untrusted identity/internal headers before adding verified values. Backend JWT validation checks issuer/audience/signature/expiry and service-to-service trust independently. Map subject/tenant to local owner IDs explicitly; do not assume an arbitrary JWT subject is a customer UUID.
+- Creating resources for oneself derives ownership from authentication. Creating on behalf of another customer requires explicit authorization in the service, not merely checking that the target exists.
 - Admin and service-to-service access use separate scopes/clients. Principle of least privilege everywhere.
 - Log authentication failures and access-denied events at `WARN` without sensitive details, so abuse is detectable.
 - Rate-limit authentication and expensive endpoints (gateway, or Bucket4j/Redis in-app).
@@ -104,6 +106,6 @@ Rules:
 ## Security testing
 
 - Every secured endpoint has tests for: unauthenticated -> `401`, authenticated without permission -> `403`, other user's resource -> `404`/`403`, happy path.
-- Use `@WithMockUser`/`SecurityMockMvcRequestPostProcessors.jwt()` (or the test helpers for the chosen client) in slice tests.
+- MVC slices use `@WithMockUser`/`SecurityMockMvcRequestPostProcessors.jwt()` as appropriate. WebFlux uses WebTestClient with `SecurityMockServerConfigurers.mockJwt()` or runtime-appropriate helpers. Include real decoder/claim-validation tests where token validation itself is in scope.
 - Include a test that fails when a new endpoint is accidentally public (e.g. iterate handler mappings, or assert unauthenticated access to a sample of routes returns `401`).
 - Static analysis for security (SpotBugs + FindSecBugs, or CodeQL/Semgrep) runs in CI.

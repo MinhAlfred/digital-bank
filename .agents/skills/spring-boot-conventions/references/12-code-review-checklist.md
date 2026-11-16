@@ -30,9 +30,9 @@ Use this when reviewing a PR, a diff, or the agent's own output before presentin
 ### Design and layering
 - [ ] Code is in the right feature and layer; dependency direction `web -> service -> repository -> domain`
 - [ ] Controller is thin; no business logic, repository, or `@Transactional` in it
-- [ ] Service has interface + `Impl`; callers use the interface
+- [ ] Public feature service has interface + `Impl`; callers use the interface; DTOs live in this service's `common.dto.<feature>`, wrappers in `common.dto`
 - [ ] Entities do not leak into controllers, DTOs, events, or other features
-- [ ] Cross-feature interaction through service interfaces or events only
+- [ ] Local features use interfaces/events; remote services use HTTP/message adapters and independent local DTOs; no shared entities/repositories/database access
 - [ ] No god class, no utility dumping ground, no duplicated logic that belongs in one place
 
 ### Correctness
@@ -54,10 +54,10 @@ Use this when reviewing a PR, a diff, or the agent's own output before presentin
 - [ ] All associations `LAZY`; no N+1 (check list endpoints); fetch strategy explicit
 - [ ] `@Version` on mutable aggregates; `equals/hashCode` per rules; no `@Data` on entities
 - [ ] Queries parameterized; no `findAll()` unbounded; projections for read models
-- [ ] Transactions on service impl; `readOnly` for reads; no remote call inside a transaction; no self-invocation
+- [ ] Local transactions use the correct manager/runtime; remote orchestrators stay outside transactions; proxy/self-invocation and cancellation/context behavior understood
 
 ### Security
-- [ ] New endpoints authenticated/authorized; ownership (IDOR) checked in the service
+- [ ] New endpoints authenticated/authorized; ownership checked in the service including creation; caller identity is verified; on-behalf-of actions require permission
 - [ ] No secrets, tokens, or PII in code, config, logs, or error messages
 - [ ] Input validated at the boundary; SQL/JPQL parameterized; file/URL inputs constrained
 - [ ] CORS, CSRF, headers consistent with `07-config-and-security.md`
@@ -85,7 +85,7 @@ Use this when reviewing a PR, a diff, or the agent's own output before presentin
 - [ ] New logic covered: happy path, each business rule, errors, boundaries
 - [ ] Right level: unit for logic, slice for web/JPA, integration for flows; real DB via Testcontainers
 - [ ] Deterministic (fixed `Clock`, no sleeps); descriptive names; AssertJ
-- [ ] ArchUnit suite still passes; coverage gate holds
+- [ ] Tests actually discovered by configured runners (`*IT` through Failsafe `verify`); configured ArchUnit/coverage gates pass; absent/unrun checks reported honestly
 - [ ] Bug fix includes a regression test
 
 ## Review output format
@@ -108,3 +108,4 @@ Use this when reviewing a PR, a diff, or the agent's own output before presentin
 ```
 
 If there are no findings at a level, omit that section. End with an explicit verdict: **Approve**, **Approve with comments**, or **Request changes**.
+For reactive/gateway changes also check: no blocking/manual subscription in event-loop paths; reactive security/error handlers; trusted-header sanitization; Reactor-aware identity/tracing; bounded requests/timeouts. Apply JPA/SQL checklist items only when that service uses them.

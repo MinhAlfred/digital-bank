@@ -31,7 +31,7 @@
 
 ## Naming and structure
 
-- Class: `<ClassUnderTest>Test`; integration tests `<Feature>IT` (run by Failsafe/`integrationTest` task). Test sources mirror the main package.
+- Unit/slice classes: `<ClassUnderTest>Test` or existing `*Tests`. Maven integration tests: `<Feature>IT` only after Failsafe is bound to `integration-test` and `verify` (see `10-build-and-quality.md`). A class named `*IT` is not run by default Surefire discovery. For Gradle, explicitly wire the integration-test task/source set into `check`. Preserve existing test names until runner configuration is in place. Test sources mirror this service's packages.
 - Method: `method_condition_expectedResult`, e.g. `cancel_whenAlreadyShipped_throwsConflict`. `@DisplayName` optional for readability.
 - Body in **Given / When / Then** blocks separated by blank lines (or comments). One logical behavior per test; several assertions on the same outcome are fine (`assertThat(...).extracting(...)` or `SoftAssertions`).
 - Assertions: **AssertJ** (`assertThat`, `assertThatThrownBy`, `assertThatCode`). Not JUnit `assertEquals`, not Hamcrest in new tests.
@@ -53,7 +53,7 @@
 
 Verify: routing and status codes, request validation (`400` + `VALIDATION_ERROR` payload), serialization of the JSON contract, error mapping through `GlobalExceptionHandler` (import it), `Location` header on create, security rules (`401/403`) by importing the `SecurityConfig`.
 
-Do not test business logic here.
+Do not test business logic here. For WebFlux use `@WebFluxTest` + WebTestClient, mock reactive collaborators, and import reactive security/error handling. Gateways may need a focused boot context with stub upstreams rather than a controller slice.
 
 ## Persistence slice tests
 
@@ -67,11 +67,11 @@ Do not test business logic here.
 - `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `RestTestClient` (Boot 4) or `MockMvcTester` with the full context, Testcontainers for DB/broker/cache, WireMock/MockServer (or `MockRestServiceServer`) for outbound HTTP.
 - Cover each feature's **critical end-to-end flows**: create -> read -> update -> error paths, authentication, transactions rolling back correctly, events/outbox side effects.
 - Clean data per test with unique ids or truncation in `@BeforeEach`; do not rely on `@Transactional` rollback in tests that cross threads/HTTP.
-- Keep the suite fast; run in CI on every PR.
+- Keep the suite fast; run in CI on every PR. Maven CI uses `verify` so Failsafe checks results and teardown runs; `test` alone does not run Failsafe ITs. Inspect `target/surefire-reports` and `target/failsafe-reports`/test counts rather than accepting a green build with undiscovered tests.
 
 ## Architecture tests (ArchUnit)
 
-Conventions are enforced by machine, not by review. One `ArchitectureTest` runs in the normal build; the full class is in `13-code-templates.md`. Minimum rule set:
+When ArchUnit is configured, run `ArchitectureTest` in the normal build; the full class is in `13-code-templates.md`. Minimum rule set:
 
 - `web` does not depend on `repository`, `service.impl`, or JPA entities
 - `service`/`service.impl` does not depend on `web`
@@ -79,7 +79,7 @@ Conventions are enforced by machine, not by review. One `ArchitectureTest` runs 
 - Classes annotated `@Service` are named `*ServiceImpl`, reside in `..service.impl..`, and implement a `*Service` interface (for feature services)
 - No field injection (`GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION`)
 - Controllers are annotated `@RestController` and named `*Controller`
-- No cycles between features (`slices().matching("com.acme.shop.(*)..").should().beFreeOfCycles()`)
+- No cycles between business features; exclude service-local `common` and `config` from feature slicing and enforce DTO independence separately (see the template). Do not mistake shared DTOs for a business feature.
 - No use of `System.out`, `java.util.logging`, `java.util.Date` (`GeneralCodingRules`)
 
 If the project uses Spring Modulith, add `ApplicationModules.of(Application.class).verify()`.
@@ -94,7 +94,7 @@ If the project uses Spring Modulith, add `ApplicationModules.of(Application.clas
 
 ## Coverage and CI
 
-- JaCoCo reports on every build. Gates (adjust per project): **>= 80% line / 70% branch** on `service` and `domain` packages; no gate on generated code, DTO records, configuration, `Application`.
+- Run configured JaCoCo reports/gates. For a new service, explicitly configure chosen thresholds; suggested starting values (adjust per project): **>= 80% line / 70% branch** on `service` and `domain` packages; no gate on generated code, DTO records, configuration, `Application`.
 - Coverage is a floor, not a goal; mutation testing (PIT) on `service`/`domain` is encouraged for critical modules.
 - Flaky tests are bugs: quarantine by fixing within the sprint, never by blanket retries.
 - CI order: compile -> format check -> unit -> slice -> architecture -> integration (Failsafe) -> coverage gate -> vulnerability scan.
@@ -107,3 +107,9 @@ If the project uses Spring Modulith, add `ApplicationModules.of(Application.clas
 - JUnit 4 is gone; use JUnit Jupiter (JUnit 6 with Boot 4). No `@RunWith`, no `junit-vintage`.
 - Many test-slice annotations and auto-configuration classes moved to new per-module packages in Boot 4. Copy import statements from existing tests in the repo or let the compiler/IDE resolve them; do not guess packages from Boot 3 memory.
 - Testcontainers 2.x changed some artifact names and classes (for example the module artifacts are prefixed `testcontainers-` and container classes moved into module packages). Follow the version managed by the Spring Boot BOM and match existing imports.
+## Cross-service and reactive behavior
+
+- Each service tests its own DTO serialization and consumer adapter mapping; use provider/consumer contract tests when APIs/events cross service boundaries. Use stub upstreams for most service tests; reserve full multi-service runs for critical system flows.
+- Cover caller-derived ownership on creation, on-behalf-of denial, cross-user access, idempotency conflicts, duplicate events, transaction rollback, outbox durability and retry exhaustion when applicable.
+- Reactive unit tests use StepVerifier for emitted values/errors/completion; integration tests use WebTestClient. Exercise cancellation/timeout behavior where it affects cleanup or transactions, and verify context is available across asynchronous boundaries.
+- Gateway tests verify untrusted header stripping, verified identity forwarding, public-route policy and upstream error handling without introducing blocking code.

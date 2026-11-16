@@ -43,12 +43,14 @@ Pure internal helpers (price calculators, validators) are plain `@Component` cla
 ## Transactions
 
 - Place `@Transactional` on **service implementation** classes/methods only (not controllers, not repositories unless a repository method needs special semantics).
-- Default for the class: `@Transactional(readOnly = true)`. Methods that write carry their own `@Transactional`.
+- For DB-only services, a class-level `@Transactional(readOnly = true)` with explicit write methods is suitable. Orchestrators that make remote calls have no class-level transaction: delegate persistence to a separate proxied transactional bean or a `TransactionTemplate` block. A read-only transaction still holds resources during remote work.
 - Keep transactions **short**. Do not hold a DB transaction while calling external HTTP services, sending email, or waiting on queues. Pattern: read/validate -> call remote -> short write transaction, or publish an event after commit.
 - Use `Propagation.REQUIRES_NEW` rarely and deliberately (audit trails that must survive rollback).
 - Rollback: unchecked exceptions roll back by default. If a checked exception must roll back, declare `rollbackFor`. Do not catch an exception inside the transaction and continue as if nothing happened.
 - Never expose lazy-loaded entities beyond the transaction; map to DTOs inside it.
-- Multi-aggregate consistency across features -> events + eventual consistency, or the outbox pattern. Do not stretch a single DB transaction across features that should be separable.
+- Aggregates/features in the same database may share a local transaction when an invariant requires it. Across separate services/databases, use explicit eventual consistency/compensation and outbox/inbox as needed; a local `@Transactional` cannot cover remote commits.
+- Proxy mode: public methods are the portable service-contract default. Since Framework 6, protected/package-visible methods can be transactional with class-based proxies; JDK interface proxies require public methods declared on the interface. Private/final methods cannot be advised by class proxies; self-invocation bypasses advice. AspectJ weaving has different interception semantics; inspect configuration before reasoning about it.
+- Reactive persistence uses `ReactiveTransactionManager` and a reactive return type or `TransactionalOperator`. Participating operations must stay in the same Reactor context/pipeline; thread-local imperative transactions do not follow scheduler hops. Keep remote work outside the transactional publisher. Cancellation can cause rollback; test it.
 - Concurrency on hot rows: optimistic locking (`@Version`) first; pessimistic locks (`@Lock(PESSIMISTIC_WRITE)`) only for proven contention, with a lock timeout hint.
 
 ## Business rules and validation
@@ -66,6 +68,7 @@ Uniqueness: check in the service for a friendly error **and** enforce with a uni
 
 - Endpoint-level rules (`@PreAuthorize("hasAuthority('order:read')")`) express *who may call*.
 - Resource-level rules express *who may touch this row*; implement them in the service (fetch by `id AND ownerId`, or compare after load). This prevents IDOR.
+- Creation must enforce ownership too: derive the customer/tenant from validated authentication, or verify an explicit on-behalf-of permission. Mere existence of a body-supplied customer ID is insufficient.
 - Pass the acting user's id explicitly (`cancel(UUID orderId, UUID actingUserId)`) or read it from a small `CurrentUser` abstraction; do not read `SecurityContextHolder` deep in business code.
 - Return `404` rather than `403` when revealing existence is itself a leak.
 
@@ -86,7 +89,7 @@ class InventoryOrderListener {
 ```
 
 - Events are immutable records, past-tense names, carrying IDs and minimal facts (not entities).
-- `AFTER_COMMIT` listeners run outside the original transaction; if they write data they need their own `@Transactional(propagation = REQUIRES_NEW)`.
+- At `AFTER_COMMIT`, the original transaction is already committed but resources may still be bound. Writes that must persist need a separate transaction, commonly a proxied `@Transactional(propagation = REQUIRES_NEW)` collaborator. This imperative listener example is not a reactive transaction-context recipe; use the target version's reactive event support when needed.
 - Listeners must be idempotent: assume an event may be delivered more than once.
 - When an event must reach another process (Kafka/RabbitMQ) reliably, use the **transactional outbox**: write the event row in the same transaction as the state change, and a relay publishes it and marks it sent. Consumers deduplicate by event id. Never publish to a broker directly inside the DB transaction and hope both succeed.
 
@@ -100,7 +103,7 @@ class InventoryOrderListener {
 
 ## Async, scheduling, virtual threads
 
-- Enable virtual threads for request handling with `spring.threads.virtual.enabled=true` on Java 21+. Then do not hand-roll thread pools for blocking I/O. Size the DB connection pool deliberately: it becomes the concurrency limit.
+- For a blocking MVC service, consider enabling virtual threads for request handling with `spring.threads.virtual.enabled=true` on Java 21+. Then do not hand-roll thread pools for blocking I/O. Size the DB connection pool deliberately: it becomes the concurrency limit.
 - `@Async` only with a named, configured executor (`@Async("mailExecutor")`) and a handler for uncaught exceptions. `@Async` methods return `void` or `CompletableFuture`, and must be called from another bean (proxy).
 - No `@Async` for work that must be part of the caller's transaction.
 - `@Scheduled` jobs: keep the method tiny and delegate to a service; they must be idempotent and safe to run on multiple instances. In a multi-instance deployment use a distributed lock (ShedLock) or a single-run mechanism. Configure cron via properties (`app.jobs.cleanup.cron`), not literals.
@@ -108,17 +111,22 @@ class InventoryOrderListener {
 
 ## Calling other services and external systems
 
-- Inside the monolith: call the other feature's service **interface** (see `01-architecture.md`).
-- External systems: wrap in an adapter class with its own interface (`PaymentGateway`), implemented on `RestClient`/`@HttpExchange`. The adapter owns timeouts, error translation, and retry policy.
+- Within the same application: call the other feature's service **interface** (see `01-architecture.md`).
+- External systems: wrap in an adapter class with its own interface (`PaymentGateway`), implemented on `RestClient`/blocking `@HttpExchange` for imperative services, or `WebClient`/reactive `@HttpExchange` for WebFlux. Remote wire DTOs belong to this service's `common.dto.external.<provider>` and are translated at the adapter. The adapter owns timeouts, error translation, and retry policy.
 - Resilience: Spring Framework 7 provides `@Retryable` and `@ConcurrencyLimit` (enable with `@EnableResilientMethods`); Resilience4j is acceptable if the project already uses it. Retry only idempotent operations; always cap attempts and use backoff with jitter.
 - Never let remote DTOs leak into the domain; translate at the adapter.
 
 ## Common pitfalls
 
-- `@Transactional` on private/package-private methods or self-invoked methods does nothing.
+- Self-invocation bypasses transactional advice in proxy mode. Package-visible/protected methods are supported by class-based proxies since Framework 6; do not classify them together with private methods.
 - `@Transactional(readOnly = true)` method that calls a write -> silent bugs/exceptions; keep reads and writes in separate methods.
 - Returning an entity from a `readOnly` transaction and touching a lazy field in the controller -> `LazyInitializationException`. Map inside the service.
 - Catching `Exception` in a service and returning `null` or `false` to signal failure.
 - Doing `findAll()` then filtering in memory; push filtering into the query.
 - Looping and calling `repository.save()` per element for large batches; use batch operations.
 - Publishing events before commit and consuming them as if the data were durable.
+## Official transaction references
+
+- [Visibility, proxy mode and self-invocation](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html)
+- [Imperative versus reactive transaction context](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/tx-decl-explained.html)
+- [Transactional event listeners](https://docs.spring.io/spring-framework/reference/data-access/transaction/event.html)

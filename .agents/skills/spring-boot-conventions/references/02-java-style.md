@@ -16,8 +16,8 @@
 
 ## Formatting
 
-- Formatter: **Spotless** with `google-java-format` in AOSP style (4-space indent, 100-column limit). Run `spotless:apply` before finishing. If the project already configures a different formatter, keep it.
-- UTF-8, LF line endings, final newline (enforced by `.editorconfig`).
+- Use the configured formatter and its settings. For new services, Spotless with google-java-format AOSP is an option; configure it before invoking it. If no formatter exists, preserve surrounding style and do not introduce repository-wide formatting changes.
+- Prefer UTF-8, LF and a final newline; honor existing `.editorconfig` settings when present.
 - No wildcard imports. Import order is whatever the formatter produces. Static imports are allowed only for test libraries (AssertJ, Mockito, JUnit) and constants of the same domain.
 - One top-level type per file. Braces always, even for single-line `if`.
 - Do not hand-align code or use trailing whitespace tricks; the formatter owns whitespace.
@@ -44,7 +44,7 @@
 
 ## Null handling and Optional
 
-- Packages are `@NullMarked` (see `01-architecture.md`). Mark the exceptions with `@Nullable`.
+- When JSpecify is adopted, annotate each relevant package with `@NullMarked`; parent packages do not cover subpackages. Mark optional fields/components with `@Nullable` (see `01-architecture.md`).
 - Never return `null` from a method returning a collection, array, or `Optional`. Return empty.
 - `Optional` is for **return types only**. Never as a field, a method parameter, or a record component. Never call `Optional.get()` without a check; prefer `orElseThrow(...)`, `map`, `ifPresentOrElse`.
 - Validate arguments early: `Objects.requireNonNull(x, "x")` in constructors of non-record types; Bean Validation at the boundary.
@@ -87,7 +87,7 @@
 
 ## Money, time, identifiers
 
-- **Money:** `BigDecimal` plus a currency code, or a `Money` value record. Construct from `String` or `BigDecimal.valueOf`, never `new BigDecimal(double)`. Compare with `compareTo`, not `equals`. Always specify `RoundingMode`.
+- **Money:** `BigDecimal` plus a currency code, or a `Money` value record. Construct from `String` or `BigDecimal.valueOf`, never `new BigDecimal(double)`. Compare with `compareTo`, not `equals`. Specify scale and `RoundingMode` for operations that may round; reject unsupported fractional currency units at the boundary when the contract requires exact amounts. Match `NUMERIC/DECIMAL` precision/scale in schema and entity. Test rounding boundaries and currency mismatches.
 - **Time:** `Instant` for points in time (stored UTC, column `timestamptz`), `LocalDate` for calendar dates, `Duration`/`Period` for spans. No `java.util.Date`, `Calendar`, or `SimpleDateFormat`. Inject `java.time.Clock`; tests use `Clock.fixed(...)`.
 - **IDs:** `UUID` for public identifiers by default (non-guessable). `Long` surrogate keys are acceptable internally. Never expose sequential IDs when enumeration is a risk.
 - **Enums:** persist by name (`@Enumerated(EnumType.STRING)`), never by ordinal. Expose stable string values in the API.

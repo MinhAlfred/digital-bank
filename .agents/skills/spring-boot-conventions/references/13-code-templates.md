@@ -1,6 +1,6 @@
 # 13 - Code Templates
 
-Copy-and-adapt skeletons for a feature called `order` in `com.acme.shop`. Replace names, packages, and fields. Check imports against the project's Spring Boot version (see `11-spring-boot-4-notes.md`); import statements are omitted for brevity except where they matter.
+Copy-and-adapt skeletons inside one deployable service, for feature `order` in `com.acme.shop`. Sections 1-17 illustrate MVC/JPA; section 18 is the WebFlux/gateway variant and section 19 separates remote orchestration from local transactions. Replace names, packages, and fields. Check imports against the project's Spring Boot version (see `11-spring-boot-4-notes.md`); import statements are omitted for brevity except where they matter.
 
 ## Contents
 1. Entity and base auditing
@@ -20,6 +20,8 @@ Copy-and-adapt skeletons for a feature called `order` in `com.acme.shop`. Replac
 15. Web slice test
 16. Repository test with Testcontainers
 17. Architecture test (ArchUnit)
+18. WebFlux security and caller ownership
+19. Remote orchestration outside the transaction
 
 ---
 
@@ -67,6 +69,9 @@ public class Order extends AuditableEntity {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal totalAmount;
 
+    @Column(nullable = false, length = 3)
+    private String currency;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private final List<OrderItem> items = new ArrayList<>();
 
@@ -76,6 +81,11 @@ public class Order extends AuditableEntity {
         Order order = new Order();
         order.customerId = Objects.requireNonNull(customerId);
         order.status = OrderStatus.PENDING_PAYMENT;
+        if (items.isEmpty()) throw new IllegalArgumentException("items must not be empty");
+        order.currency = items.getFirst().getCurrency();
+        if (items.stream().anyMatch(item -> !order.currency.equals(item.getCurrency()))) {
+            throw new CurrencyMismatchException();
+        }
         items.forEach(order::addItem);
         order.totalAmount = order.items.stream()
                 .map(OrderItem::lineTotal)
@@ -102,6 +112,7 @@ public class Order extends AuditableEntity {
     public UUID getCustomerId() { return customerId; }
     public OrderStatus getStatus() { return status; }
     public BigDecimal getTotalAmount() { return totalAmount; }
+    public String getCurrency() { return currency; }
     public List<OrderItem> getItems() { return Collections.unmodifiableList(items); }
 
     @Override
@@ -130,7 +141,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
     boolean existsByCustomerIdAndStatus(UUID customerId, OrderStatus status);
 
     @Query("""
-            select new com.acme.shop.order.dto.OrderSummary(o.id, o.status, o.totalAmount, o.createdAt)
+            select new com.acme.shop.common.dto.order.OrderSummary(o.id, o.status, o.totalAmount, o.currency, o.createdAt)
             from Order o
             where o.customerId = :customerId
             """)
@@ -141,26 +152,26 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
 ## 3. DTOs
 
 ```java
-// order/dto/CreateOrderRequest.java
+// common/dto/order/CreateOrderRequest.java
 public record CreateOrderRequest(
-        @NotNull UUID customerId,
         @NotEmpty @Size(max = 100) List<@Valid Line> lines,
-        @Size(max = 500) String note) {
+        @Nullable @Size(max = 500) String note) {
 
     public record Line(@NotNull UUID productId, @Positive int quantity) {}
 }
 
-// order/dto/OrderResponse.java
+// common/dto/order/OrderResponse.java
 public record OrderResponse(
         UUID id,
         UUID customerId,
         OrderStatus status,
         BigDecimal totalAmount,
+        String currency,
         List<OrderItemResponse> items,
         Instant createdAt) {}
 
-// order/dto/OrderSummary.java  (list view, also used as JPQL constructor projection)
-public record OrderSummary(UUID id, OrderStatus status, BigDecimal totalAmount, Instant createdAt) {}
+// common/dto/order/OrderSummary.java  (list view, also used as JPQL constructor projection)
+public record OrderSummary(UUID id, OrderStatus status, BigDecimal totalAmount, String currency, Instant createdAt) {}
 ```
 
 ## 4. Mapper
@@ -185,12 +196,13 @@ Entities are created through domain factories (`Order.create(...)`), not by MapS
 public interface OrderService {
 
     /**
-     * Creates an order for the given customer.
+     * Creates an order owned by the authenticated, locally resolved customer.
+     * The caller supplies actingCustomerId from validated authentication, never request ownership fields.
      *
-     * @throws ResourceNotFoundException if the customer or a product does not exist
+     * @throws ResourceNotFoundException if a product does not exist
      * @throws InsufficientStockException if a product cannot be fulfilled
      */
-    OrderResponse create(CreateOrderRequest request);
+    OrderResponse create(CreateOrderRequest request, UUID actingCustomerId);
 
     /** @throws ResourceNotFoundException if the order does not exist or is not owned by the caller */
     OrderResponse getById(UUID orderId, UUID actingUserId);
@@ -217,28 +229,26 @@ public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
-    private final CustomerService customerService;          // other feature: via interface
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
     public OrderServiceImpl(OrderRepository orderRepository, OrderMapper orderMapper,
-                            CustomerService customerService, ApplicationEventPublisher events, Clock clock) {
+                            ApplicationEventPublisher events, Clock clock) {
         this.orderRepository = orderRepository;
         this.orderMapper = orderMapper;
-        this.customerService = customerService;
         this.events = events;
         this.clock = clock;
     }
 
     @Override
     @Transactional
-    public OrderResponse create(CreateOrderRequest request) {
-        customerService.assertExists(request.customerId());
+    public OrderResponse create(CreateOrderRequest request, UUID actingCustomerId) {
+        Objects.requireNonNull(actingCustomerId, "actingCustomerId");
         List<OrderItem> items = request.lines().stream()
                 .map(line -> OrderItem.of(line.productId(), line.quantity()))
                 .toList();
 
-        Order saved = orderRepository.save(Order.create(request.customerId(), items));
+        Order saved = orderRepository.save(Order.create(actingCustomerId, items));
 
         log.info("Order created id={} customerId={}", saved.getId(), saved.getCustomerId());
         events.publishEvent(new OrderCreatedEvent(saved.getId(), clock.instant()));
@@ -276,7 +286,6 @@ public class OrderServiceImpl implements OrderService {
 // order/web/OrderController.java
 @RestController
 @RequestMapping("/api/v1/orders")
-@Validated
 class OrderController {
 
     private final OrderService orderService;
@@ -286,8 +295,9 @@ class OrderController {
     }
 
     @PostMapping
-    ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request) {
-        OrderResponse created = orderService.create(request);
+    ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request,
+                                         @AuthenticationPrincipal Jwt jwt) {
+        OrderResponse created = orderService.create(request, UUID.fromString(jwt.getSubject()));
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}").buildAndExpand(created.id()).toUri();
         return ResponseEntity.created(location).body(created);
@@ -310,6 +320,10 @@ class OrderController {
     }
 }
 ```
+
+The example assumes the validated JWT subject is this service's customer UUID. If the identity provider uses a different subject, resolve it through a trusted local mapping before calling the service. Never accept a body `customerId` for self-service creation. Add a separately authorized use case for on-behalf-of creation.
+
+Item construction/pricing is illustrative: complete the domain types, fixtures and trusted price/currency resolution for the actual project. Client-submitted totals are never authoritative. Remote catalog/customer checks follow section 19 and stay outside the transaction.
 
 ## 8. Exceptions and error codes
 
@@ -348,7 +362,8 @@ public class ResourceNotFoundException extends BusinessException {
 public enum OrderErrorCode implements ErrorCode {
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND),
     ORDER_ALREADY_CANCELLED(HttpStatus.CONFLICT),
-    ORDER_NOT_CANCELLABLE(HttpStatus.CONFLICT);
+    ORDER_NOT_CANCELLABLE(HttpStatus.CONFLICT),
+    CURRENCY_MISMATCH(HttpStatus.CONFLICT);
 
     private final HttpStatus status;
     OrderErrorCode(HttpStatus status) { this.status = status; }
@@ -363,6 +378,13 @@ public class OrderAlreadyCancelledException extends BusinessException {
         super(OrderErrorCode.ORDER_ALREADY_CANCELLED, "Order " + orderId + " is already cancelled");
     }
 }
+
+// order/domain/CurrencyMismatchException.java
+public class CurrencyMismatchException extends BusinessException {
+    public CurrencyMismatchException() {
+        super(OrderErrorCode.CURRENCY_MISMATCH, "Order items must use the same currency");
+    }
+}
 ```
 
 ## 9. Global exception handler
@@ -370,7 +392,7 @@ public class OrderAlreadyCancelledException extends BusinessException {
 ```java
 // common/web/GlobalExceptionHandler.java
 @RestControllerAdvice
-class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
@@ -395,7 +417,7 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleIntegrity(DataIntegrityViolationException ex) {
-        log.warn("Data integrity violation", ex);               // details stay in logs only
+        log.debug("Data integrity conflict");                   // do not log SQL/bind values
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.CONFLICT, "The request conflicts with existing data.");
         problem.setProperty("code", "DATA_CONFLICT");
@@ -439,7 +461,7 @@ Also override `handleHandlerMethodValidationException` (parameter-level validati
 ## 10. Pagination wrapper
 
 ```java
-// common/web/PageResponse.java
+// common/dto/PageResponse.java
 public record PageResponse<T>(List<T> items, int page, int size, long totalElements, int totalPages) {
 
     public static <T> PageResponse<T> from(Page<T> page) {
@@ -470,6 +492,13 @@ app:
     read-timeout: 5s
 ```
 
+```java
+// config/CorsProperties.java
+@ConfigurationProperties(prefix = "app.cors")
+@Validated
+public record CorsProperties(@NotEmpty List<@NotBlank String> allowedOrigins) {}
+```
+
 ## 12. Security configuration
 
 ```java
@@ -477,7 +506,7 @@ app:
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-class SecurityConfig {
+public class SecurityConfig {
 
     @Bean
     SecurityFilterChain apiSecurity(HttpSecurity http) throws Exception {
@@ -505,6 +534,8 @@ class SecurityConfig {
 }
 ```
 
+The JWT decoder must validate issuer, audience, expiry and signature using this service's trusted configuration. Security filter failures need an `AuthenticationEntryPoint`/`AccessDeniedHandler` that write the same ProblemDetail contract as MVC advice.
+
 Beans: `Clock` (`Clock.systemUTC()`), `AuditorAware<String>`, and `@EnableJpaAuditing` live in `config/`.
 
 ## 13. Flyway migration
@@ -517,6 +548,7 @@ create table orders (
     customer_id  uuid           not null,
     status       varchar(30)    not null,
     total_amount numeric(19, 4) not null,
+    currency     varchar(3)     not null,
     created_at   timestamptz    not null,
     updated_at   timestamptz    not null,
     constraint ck_orders_status check (status in ('PENDING_PAYMENT', 'PAID', 'SHIPPED', 'CANCELLED'))
@@ -535,14 +567,27 @@ class OrderServiceImplTest {
 
     @Mock OrderRepository orderRepository;
     @Mock OrderMapper orderMapper;
-    @Mock CustomerService customerService;
     @Mock ApplicationEventPublisher events;
 
     OrderServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new OrderServiceImpl(orderRepository, orderMapper, customerService, events, CLOCK);
+        service = new OrderServiceImpl(orderRepository, orderMapper, events, CLOCK);
+    }
+
+    @Test
+    void create_usesAuthenticatedCustomerAsOwner() {
+        UUID actingCustomerId = UUID.randomUUID();
+        CreateOrderRequest request = new CreateOrderRequest(
+                List.of(new CreateOrderRequest.Line(UUID.randomUUID(), 1)), null);
+        given(orderRepository.save(any(Order.class))).willAnswer(invocation -> invocation.getArgument(0));
+
+        service.create(request, actingCustomerId);
+
+        ArgumentCaptor<Order> savedOrder = ArgumentCaptor.forClass(Order.class);
+        then(orderRepository).should().save(savedOrder.capture());
+        assertThat(savedOrder.getValue().getCustomerId()).isEqualTo(actingCustomerId);
     }
 
     @Test
@@ -573,15 +618,18 @@ class OrderServiceImplTest {
 ```java
 @WebMvcTest(OrderController.class)
 @Import({GlobalExceptionHandler.class, SecurityConfig.class})
+@EnableConfigurationProperties(CorsProperties.class)
+@TestPropertySource(properties = "app.cors.allowed-origins[0]=https://client.example")
 class OrderControllerTest {
 
     @Autowired MockMvcTester mvc;
     @MockitoBean OrderService orderService;
+    @MockitoBean JwtDecoder jwtDecoder;
 
     @Test
     void create_withEmptyLines_returns400WithValidationErrors() {
         String body = """
-                { "customerId": "6b1f6a4e-0d0b-4a53-9a39-3f0c4b6f6b11", "lines": [] }
+                { "lines": [] }
                 """;
 
         assertThat(mvc.post().uri("/api/v1/orders")
@@ -591,6 +639,25 @@ class OrderControllerTest {
                 .hasStatus(HttpStatus.BAD_REQUEST)
                 .bodyJson()
                 .extractingPath("$.code").isEqualTo("VALIDATION_ERROR");
+    }
+
+    @Test
+    void create_passesAuthenticatedSubjectToService() {
+        UUID actorId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        OrderResponse response = new OrderResponse(orderId, actorId, OrderStatus.PENDING_PAYMENT,
+                BigDecimal.ONE, "USD", List.of(), Instant.parse("2026-01-01T00:00:00Z"));
+        given(orderService.create(any(CreateOrderRequest.class), eq(actorId))).willReturn(response);
+        String body = """
+                { "lines": [{ "productId": "6b1f6a4e-0d0b-4a53-9a39-3f0c4b6f6b11", "quantity": 1 }] }
+                """;
+
+        assertThat(mvc.post().uri("/api/v1/orders")
+                .with(jwt().jwt(token -> token.subject(actorId.toString())))
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+                .hasStatus(HttpStatus.CREATED);
+
+        then(orderService).should().create(any(CreateOrderRequest.class), eq(actorId));
     }
 
     @Test
@@ -653,6 +720,17 @@ class ArchitectureTest {
                     .because("entities must not leave the service layer");
 
     @ArchTest
+    static final ArchRule dtos_do_not_depend_on_implementation =
+            noClasses().that().resideInAPackage("..common.dto..")
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage("..web..", "..service..", "..repository..");
+
+    @ArchTest
+    static final ArchRule dtos_do_not_use_entities =
+            noClasses().that().resideInAPackage("..common.dto..")
+                    .should().dependOnClassesThat().areAnnotatedWith(Entity.class);
+
+    @ArchTest
     static final ArchRule services_do_not_depend_on_web =
             noClasses().that().resideInAnyPackage("..service..")
                     .should().dependOnClassesThat().resideInAPackage("..web..");
@@ -660,13 +738,13 @@ class ArchitectureTest {
     @ArchTest
     static final ArchRule domain_is_independent =
             noClasses().that().resideInAPackage("..domain..")
-                    .should().dependOnClassesThat().resideInAnyPackage("..web..", "..service..", "..repository..");
+                    .should().dependOnClassesThat().resideInAnyPackage("..web..", "..service..", "..repository..", "..common.dto..");
 
     @ArchTest
     static final ArchRule services_follow_interface_plus_impl =
             classes().that().areAnnotatedWith(Service.class)
-                    .and().resideInAPackage("..service.impl..")
-                    .should().haveSimpleNameEndingWith("ServiceImpl")
+                    .should().resideInAPackage("..service.impl..")
+                    .andShould().haveSimpleNameEndingWith("ServiceImpl")
                     .andShould().implement(JavaClass.Predicates.simpleNameEndingWith("Service"));
 
     @ArchTest
@@ -689,10 +767,99 @@ class ArchitectureTest {
     @ArchTest
     static final ArchRule no_java_util_logging = GeneralCodingRules.NO_CLASSES_SHOULD_USE_JAVA_UTIL_LOGGING;
 
+    // Imports: com.tngtech.archunit.library.dependencies.SliceAssignment and SliceIdentifier
+    static final SliceAssignment businessFeatures = new SliceAssignment() {
+        @Override
+        public SliceIdentifier getIdentifierOf(JavaClass javaClass) {
+            String root = "com.acme.shop.";
+            String packageName = javaClass.getPackageName();
+            if (!packageName.startsWith(root)) return SliceIdentifier.ignore();
+            String feature = packageName.substring(root.length()).split("\\.")[0];
+            if (Set.of("common", "config").contains(feature)) return SliceIdentifier.ignore();
+            return SliceIdentifier.of(feature);
+        }
+
+        @Override
+        public String getDescription() { return "business features within this service"; }
+    };
+
     @ArchTest
     static final ArchRule features_are_free_of_cycles =
-            SlicesRuleDefinition.slices().matching("com.acme.shop.(*)..").should().beFreeOfCycles();
+            SlicesRuleDefinition.slices().assignedFrom(businessFeatures).should().beFreeOfCycles();
 }
 ```
 
-Adjust `"com.acme.shop"` to the project's root package; keep these rules green on every build. Add a rule per new convention the team adopts, so conventions are enforced by the build, not by memory.
+Adjust both `"com.acme.shop"` roots to this service's package and select rules applicable to its runtime. JPA-entity rules need JPA; do not add it to a gateway just to compile a test. `common`/`config` are not feature slices, but common DTO independence is checked separately. Add project-specific cross-feature repository/entity access rules for the actual feature set. Configure a compatible ArchUnit JUnit engine before claiming this suite ran; see the [ArchUnit guide](https://www.archunit.org/userguide/html/000_Index.html). Keep configured rules green.
+
+## 18. WebFlux security and caller ownership
+
+Use these alternatives only in WebFlux applications. Do not import servlet HttpSecurity/WebRequest/MockMvc types. Configure a trusted ReactiveJwtDecoder with issuer/audience/signature/expiry validation and the reactive CORS source for this application. Security-filter errors need reactive ServerAuthenticationEntryPoint/ServerAccessDeniedHandler implementations writing the same ProblemDetail contract.
+
+```java
+// config/ReactiveSecurityConfig.java
+@Configuration
+@EnableWebFluxSecurity
+@EnableReactiveMethodSecurity
+public class ReactiveSecurityConfig {
+    @Bean
+    SecurityWebFilterChain apiSecurity(ServerHttpSecurity http) {
+        return http
+                .csrf(ServerHttpSecurity.CsrfSpec::disable) // stateless bearer API only
+                .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
+                .authorizeExchange(auth -> auth
+                        .pathMatchers("/actuator/health/**").permitAll()
+                        .anyExchange().authenticated())
+                .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
+                .build();
+    }
+}
+
+// Reactive service contract: DTO belongs to this application's common.dto.order
+public interface ReactiveOrderService {
+    Mono<OrderResponse> create(CreateOrderRequest request, UUID actingCustomerId);
+}
+
+// Inside a WebFlux @RestController, with constructor-injected ReactiveOrderService:
+@PostMapping
+Mono<ResponseEntity<OrderResponse>> create(@Valid @RequestBody CreateOrderRequest request,
+                                          @AuthenticationPrincipal Jwt jwt) {
+    UUID actorId = UUID.fromString(jwt.getSubject()); // validated local customer mapping, as above
+    return orderService.create(request, actorId)
+            .map(created -> ResponseEntity.created(URI.create("/api/v1/orders/" + created.id()))
+                    .body(created));
+}
+```
+
+The service implementation composes reactive adapters/repositories and performs ownership checks. It never wraps blocking JPA in Mono.just. For a gateway filter, return the composed chain after sanitizing trusted headers; the gateway does not create orders or own business persistence. Test WebFlux with WebTestClient/mockJwt and StepVerifier, not the MVC slice above.
+
+## 19. Remote orchestration outside the transaction
+
+For an imperative service calling another microservice, split remote validation from local persistence. The client port/DTOs are consumer-owned; local request DTOs never become a shared cross-service jar. This example uses TransactionTemplate so the transaction is visibly limited to the write block; a separate proxied transactional writer bean is another option.
+
+```java
+@Service
+public class OpenAccountServiceImpl implements OpenAccountService {
+    private final CustomerClient customers;
+    private final AccountWriter writer;
+    private final TransactionTemplate transactions;
+
+    public OpenAccountServiceImpl(CustomerClient customers, AccountWriter writer,
+                                   TransactionTemplate transactions) {
+        this.customers = customers;
+        this.writer = writer;
+        this.transactions = transactions;
+    }
+
+    // No class-level or method-level @Transactional on this orchestrator.
+    @Override
+    public AccountResponse open(OpenAccountRequest request, UUID actingCustomerId) {
+        CustomerSnapshot customer = customers.getEligibleCustomer(actingCustomerId);
+        return Objects.requireNonNull(transactions.execute(status ->
+                writer.open(request, actingCustomerId, customer)));
+    }
+}
+```
+
+AccountWriter is a local collaborator using this service's repositories and mapping to common.dto.account.AccountResponse. It performs local invariants/concurrency checks and no remote work. An HTTP check is a point-in-time observation, not a lock on remote state: if business correctness needs coordination, design a reservation/saga rather than assuming the check and local commit are atomic.
+
+For R2DBC, perform remote work before entering the transactional publisher, then apply TransactionalOperator to only the local persistence pipeline. Do not copy TransactionTemplate into a reactive method. See [Spring transaction semantics](https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html).

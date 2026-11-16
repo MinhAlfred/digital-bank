@@ -10,17 +10,16 @@
 
 ## Version landscape
 
-- Spring Boot 4.0 was released on 20 Nov 2025 (Spring Framework 7). 4.1 followed on 10 Jun 2026; the project is expected to track the latest 4.x line, and a 4.2 release was targeted for Nov 2026.
-- Spring Boot 3.5 reached end of open-source support on 30 Jun 2026; 4.0's open-source support ends 31 Dec 2026. New projects start on the **latest 4.x**.
-- Supported Java: 17 through 25. Prefer 21+ (25 LTS for new work).
-- Always read the version in the project's build file and follow it. These notes describe 4.x; do not change the version unless the user asks.
+- Read the affected service's build file, Java toolchain and Boot/Cloud BOMs first. Different deployables may use different compatible versions.
+- These examples target Boot 4 / Framework 7. Check APIs, Java compatibility, starter names and test libraries against the exact target release; never force a version change to match a template.
+- Before recommending an upgrade or declaring a release unsupported, consult the current [Spring Boot project/support information](https://spring.io/projects/spring-boot). Keep dated release schedules out of reusable rules.
 
 ## What changed in Boot 4 (and the rule that follows)
 
 | Area | Change | Rule |
 |---|---|---|
 | Modularization | Boot is split into smaller modules; most technologies have their own starter, each with a `-test` starter | Declare only the starters you need; add the matching test starter; do not add the old catch-all `spring-boot-starter-test` for new code |
-| Starter names | `spring-boot-starter-web` -> `spring-boot-starter-webmvc`; `-json` -> `-jackson`; `-aop` -> `-aspectj`; `-web-services` -> `-webservices`; `-oauth2-client` -> `-security-oauth2-client`; new `-restclient`, `-webclient` | Use the new names; replace classic starters when touching a pom |
+| Starter names | `spring-boot-starter-web` -> `spring-boot-starter-webmvc`; `-json` -> `-jackson`; `-aop` -> `-aspectj`; `-web-services` -> `-webservices`; `-oauth2-client` -> `-security-oauth2-client`; new `-restclient`, `-webclient` | Use target-version names for relevant additions; migrate existing starters only when needed/in scope |
 | Package moves | Many auto-configuration classes and test-slice annotations moved to per-module packages | Copy imports from existing code; do not guess from Boot 3 memory |
 | Jackson 3 | `tools.jackson.*` (`JsonMapper`) is the default; `ObjectMapper` -> `JsonMapper`; annotations stay in `com.fasterxml.jackson.annotation` | New code uses Jackson 3 APIs only; keep `spring.jackson.*` properties |
 | Testing | `@MockBean/@SpyBean` removed; `@MockitoBean/@MockitoSpyBean`; `RestTestClient` replaces `TestRestTemplate`; JUnit 4 removed; JUnit 6 | See `08-testing.md` |
@@ -49,11 +48,11 @@
 
 ## If the project is still on 3.x
 
-3.x is out of open-source support. If the user's project is on 3.x:
+If the project is on 3.x, verify its exact release/support status before making a recommendation:
 
 - Do not rewrite code to Boot 4 idioms unprompted; match the project's version (e.g. keep `@MockBean`, `spring-boot-starter-web`, Jackson 2 `ObjectMapper`).
 - Everything in the other reference files that is independent of Boot 4 still applies (layering, naming, transactions, JPA, error handling, security principles, testing strategy).
-- Tell the user once that the version is end-of-life and propose the upgrade path below; do not repeat it every message.
+- Mention an upgrade when the verified support/security status warrants it; carry out migration only when requested.
 
 ## Upgrade procedure
 

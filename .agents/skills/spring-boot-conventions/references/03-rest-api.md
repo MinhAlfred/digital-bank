@@ -15,11 +15,13 @@
 
 ## Controller rules
 
+Choose MVC or WebFlux from the service runtime. Controller annotations may look similar, but clients, security, error handlers and test utilities differ.
+
 - Annotate with `@RestController` and a class-level `@RequestMapping("/api/v1/<plural-resource>")`.
 - Package-private class is fine and preferred (`class OrderController`); controllers are not called from other code.
 - One controller method = one service call. Map request -> service -> response. Nothing else.
 - Return DTOs, never entities. Return `ResponseEntity<T>` only when you need a non-default status or headers (`201 Created` + `Location`, `ETag`); otherwise return `T` with `@ResponseStatus`.
-- Parameters: `@PathVariable`, `@RequestParam`, `@RequestBody @Valid`. Put `@Validated` on the controller class when validating path/query parameters with constraints (`@Min`, `@Size`).
+- Parameters: `@PathVariable`, `@RequestParam`, `@RequestBody @Valid`. For Spring MVC 6.1+, prefer built-in method validation for path/query constraints; remove class-level `@Validated` to use it. Preserve an intentional AOP validation setup only when required. Verify the target runtime/version.
 - No `try/catch` in controllers; the global handler converts exceptions.
 - Never read `HttpServletRequest` directly unless unavoidable. Never return `void` for creates.
 - Authentication principal: inject `@AuthenticationPrincipal` or `Authentication`, pass the user id to the service. Do not trust a `userId` sent in the body or path for "my" resources.
@@ -65,20 +67,20 @@ Never return `200` with an error payload. Never return `500` for client mistakes
 
 ## Request and response DTOs
 
-- Records in the feature's `dto` package. Separate request and response types; never reuse one record for create, update, and read.
+- Records in this service's `common.dto.<feature>` package. Generic wrappers use `common.dto`; remote wire DTOs use `common.dto.external.<provider>`. No shared DTO jar between services. Separate request and response types; never reuse one record for create, update, and read.
 - Naming: `CreateOrderRequest`, `UpdateOrderRequest`, `OrderResponse` (detail), `OrderSummary` (list item), `OrderSearchCriteria` (query object).
 - Put Bean Validation on request records:
 
 ```java
 public record CreateOrderRequest(
-        @NotNull UUID customerId,
         @NotEmpty @Size(max = 100) List<@Valid OrderLine> lines,
-        @Size(max = 500) String note) {
+        @Nullable @Size(max = 500) String note) {
 
     public record OrderLine(@NotNull UUID productId, @Positive int quantity) {}
 }
 ```
 
+- For self-service creation, derive the owner from the authenticated principal (or a verified local customer mapping) and pass it separately to the service. Creating for someone else requires a distinct permission and a service-level check.
 - Mass-assignment protection: DTOs expose **only** the fields clients may set. `id`, `version`, `createdAt`, `status`, owner fields are never in a create/update request.
 - Response DTOs contain no internal fields (password hashes, internal flags, DB ids if you expose UUIDs).
 - IDs: UUID strings. Dates: ISO-8601 (`2026-11-12T10:15:30Z` for instants, `2026-11-12` for dates). Money: object `{ "amount": "19.99", "currency": "USD" }` with the amount as a string or fixed-scale decimal. Enums: stable uppercase strings.
@@ -106,7 +108,7 @@ spring:
 
 ## Error responses (RFC 9457)
 
-All errors use `application/problem+json` produced by the single `GlobalExceptionHandler` (`06-exceptions-and-logging.md`). Enable Spring's ProblemDetail support so framework exceptions also use it:
+Use `application/problem+json` consistently through the runtime-appropriate handler (`06-exceptions-and-logging.md`). Security-filter errors require their own entry point/access-denied handling. For MVC, enable framework ProblemDetail support:
 
 ```yaml
 spring:
@@ -161,8 +163,15 @@ Validation failures: `status 400`, `code: "VALIDATION_ERROR"`, and an `errors` a
 
 ## Outbound API clients
 
-- Define clients as `@HttpExchange` interfaces registered with Spring's HTTP service client support, backed by `RestClient`, or use `RestClient` directly. `RestTemplate` is legacy: do not use it in new code. `WebClient` only in genuinely reactive code.
-- Always set connect and read timeouts (`spring.http.client.connect-timeout`, `spring.http.client.read-timeout`, or per-client configuration). There is no such thing as "no timeout".
+- Blocking services: use `RestClient` or `@HttpExchange` backed by it. Reactive services/gateways: use `WebClient` or a reactive HTTP interface with reactive return types. Build clients from the auto-configured builders. Do not add blocking HTTP to a reactive event loop or use `RestTemplate` in new code.
+- Always set connect and response/read timeouts. Blocking auto-configured clients may use `spring.http.client.connect-timeout` / `spring.http.client.read-timeout` for the target Boot release. WebClient needs timeout/pool limits on its reactive connector; do not assume blocking-client properties configure it. Check the actual connector/version.
 - Map remote errors to domain exceptions in one place (error handler / adapter class) so remote status codes do not leak through the service layer.
 - Apply retry only to idempotent calls, with backoff and a cap (`@Retryable` from Spring Framework 7 core, or Resilience4j if already present). Add a bulkhead/concurrency limit for slow dependencies.
 - Wrap each external system behind its own adapter/port class (`PaymentGateway`) with an interface so tests can substitute it.
+## WebFlux and gateway path
+
+- Compose `Mono`/`Flux`; return the pipeline so Spring manages subscription and cancellation. No `block()`, `blockFirst()`, manual `subscribe()` or blocking JPA/HTTP in handlers/filters.
+- Use bounded reactive queries/pagination. Do not assume `spring.data.web.pageable` config for MVC will bound a custom WebFlux endpoint; validate its limit explicitly.
+- For WebFlux `ProblemDetail`, use the reactive `ResponseEntityExceptionHandler` (`org.springframework.web.reactive.result.method.annotation`) and relevant reactive binding/validation exceptions. Functional routes/gateway filters may require a `WebExceptionHandler`/`ErrorWebExceptionHandler` or an explicit response writer. Do not copy servlet `WebRequest` overrides.
+- Gateway filters sanitize caller-supplied identity/internal headers before forwarding verified values; preserve authentication, trace context and cancellation. Backends enforce authorization independently.
+- Test with WebTestClient and StepVerifier as appropriate, including rejected headers, unauthenticated access, upstream timeout and cancellation paths.
