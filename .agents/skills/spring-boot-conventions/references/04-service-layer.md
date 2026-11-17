@@ -78,7 +78,7 @@ In-process events:
 
 ```java
 // publisher (inside the transaction)
-events.publishEvent(new OrderCancelledEvent(order.getId(), clock.instant()));
+applicationEventPublisher.publishEvent(new OrderCancelledEvent(order.getId(), clock.instant()));
 
 // consumer (another feature)
 @Component

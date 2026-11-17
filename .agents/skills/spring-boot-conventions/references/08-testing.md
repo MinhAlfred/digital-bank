@@ -35,7 +35,7 @@
 - Method: `method_condition_expectedResult`, e.g. `cancel_whenAlreadyShipped_throwsConflict`. `@DisplayName` optional for readability.
 - Body in **Given / When / Then** blocks separated by blank lines (or comments). One logical behavior per test; several assertions on the same outcome are fine (`assertThat(...).extracting(...)` or `SoftAssertions`).
 - Assertions: **AssertJ** (`assertThat`, `assertThatThrownBy`, `assertThatCode`). Not JUnit `assertEquals`, not Hamcrest in new tests.
-- Mockito BDD style: `given(repo.findById(id)).willReturn(...)`, `then(repo).should().save(any())`. Use `ArgumentCaptor` for checking what was saved.
+- Mockito BDD style: `given(orderRepository.findById(id)).willReturn(...)`, `then(orderRepository).should().save(any())`. Use `ArgumentCaptor` for checking what was saved.
 - Parameterized tests (`@ParameterizedTest` + `@CsvSource`/`@MethodSource`) for rule tables and boundary values.
 - Test classes are package-private; no `public` needed.
 
