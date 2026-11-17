@@ -26,19 +26,19 @@ class AccountSchemaTest {
     static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:15-alpine");
 
     @Autowired
-    AccountRepository repo;
+    AccountRepository accountRepository;
 
     @Test
     void savesAndLoadsCustomerAccount() {
-        Account a = repo.saveAndFlush(Account.openCustomerAccount(
+        Account a = accountRepository.saveAndFlush(Account.openCustomerAccount(
                 "ACC0000001", UUID.randomUUID(), ProductType.CHECKING, "VND"));
-        AssertionsForClassTypes.assertThat(repo.findById(a.getId())).isPresent();
+        AssertionsForClassTypes.assertThat(accountRepository.findById(a.getId())).isPresent();
         AssertionsForClassTypes.assertThat(a.getBalance()).isZero();
     }
 
     @Test
     void seededSystemAccountExists() {
-        AssertionsForClassTypes.assertThat(repo.findByAccountNumber("SYS-CASH-VND")).isPresent();
+        AssertionsForClassTypes.assertThat(accountRepository.findByAccountNumber("SYS-CASH-VND")).isPresent();
     }
 
     @Test

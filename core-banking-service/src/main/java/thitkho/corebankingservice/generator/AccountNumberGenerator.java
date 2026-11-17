@@ -5,12 +5,12 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class AccountNumberGenerator {
-    private final EntityManager em;
-    public AccountNumberGenerator(EntityManager em) { this.em = em; }
+    private final EntityManager entityManager;
+    public AccountNumberGenerator(EntityManager entityManager) { this.entityManager = entityManager; }
 
     /** Phải gọi trong transaction. */
     public String next() {
-        long seq = ((Number) em.createNativeQuery("select nextval('account_number_seq')")
+        long seq = ((Number) entityManager.createNativeQuery("select nextval('account_number_seq')")
                 .getSingleResult()).longValue();
         String payload = "88" + String.format("%09d", seq);
         return payload + luhnCheckDigit(payload);
