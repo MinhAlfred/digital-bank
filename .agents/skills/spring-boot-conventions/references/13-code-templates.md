@@ -84,7 +84,7 @@ public class Order extends AuditableEntity {
         if (items.isEmpty()) throw new IllegalArgumentException("items must not be empty");
         order.currency = items.getFirst().getCurrency();
         if (items.stream().anyMatch(item -> !order.currency.equals(item.getCurrency()))) {
-            throw new CurrencyMismatchException();
+            throw new BusinessException(OrderErrorCode.CURRENCY_MISMATCH, "Order items must use the same currency");
         }
         items.forEach(order::addItem);
         order.totalAmount = order.items.stream()
@@ -95,10 +95,10 @@ public class Order extends AuditableEntity {
 
     public void cancel() {
         if (status == OrderStatus.CANCELLED) {
-            throw new OrderAlreadyCancelledException(id);
+            throw new BusinessException(OrderErrorCode.ORDER_ALREADY_CANCELLED, "Order " + id + " is already cancelled");
         }
         if (status == OrderStatus.SHIPPED) {
-            throw new OrderNotCancellableException(id, status);
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_CANCELLABLE, "Order " + id + " is not cancellable in status " + status);
         }
         this.status = OrderStatus.CANCELLED;
     }
@@ -199,19 +199,19 @@ public interface OrderService {
      * Creates an order owned by the authenticated, locally resolved customer.
      * The caller supplies actingCustomerId from validated authentication, never request ownership fields.
      *
-     * @throws ResourceNotFoundException if a product does not exist
-     * @throws InsufficientStockException if a product cannot be fulfilled
+     * @throws BusinessException with a product-not-found or insufficient-stock error code
+     *         if a product does not exist or cannot be fulfilled
      */
     OrderResponse create(CreateOrderRequest request, UUID actingCustomerId);
 
-    /** @throws ResourceNotFoundException if the order does not exist or is not owned by the caller */
+    /** @throws BusinessException with ORDER_NOT_FOUND if the order is absent or not owned by the caller */
     OrderResponse getById(UUID orderId, UUID actingUserId);
 
     PageResponse<OrderSummary> findMine(UUID actingUserId, Pageable pageable);
 
     /**
-     * @throws OrderAlreadyCancelledException if already cancelled
-     * @throws OrderNotCancellableException if already shipped
+     * @throws BusinessException with ORDER_ALREADY_CANCELLED if already cancelled,
+     *         or ORDER_NOT_CANCELLABLE if already shipped
      */
     void cancel(UUID orderId, UUID actingUserId);
 }
@@ -229,14 +229,14 @@ public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
-    private final ApplicationEventPublisher events;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private final Clock clock;
 
     public OrderServiceImpl(OrderRepository orderRepository, OrderMapper orderMapper,
-                            ApplicationEventPublisher events, Clock clock) {
+                            ApplicationEventPublisher applicationEventPublisher, Clock clock) {
         this.orderRepository = orderRepository;
         this.orderMapper = orderMapper;
-        this.events = events;
+        this.applicationEventPublisher = applicationEventPublisher;
         this.clock = clock;
     }
 
@@ -251,7 +251,7 @@ public class OrderServiceImpl implements OrderService {
         Order saved = orderRepository.save(Order.create(actingCustomerId, items));
 
         log.info("Order created id={} customerId={}", saved.getId(), saved.getCustomerId());
-        events.publishEvent(new OrderCreatedEvent(saved.getId(), clock.instant()));
+        applicationEventPublisher.publishEvent(new OrderCreatedEvent(saved.getId(), clock.instant()));
         return orderMapper.toResponse(saved);
     }
 
@@ -260,7 +260,7 @@ public class OrderServiceImpl implements OrderService {
         return orderRepository.findWithItemsById(orderId)
                 .filter(order -> order.getCustomerId().equals(actingUserId))   // ownership (IDOR)
                 .map(orderMapper::toResponse)
-                .orElseThrow(() -> new ResourceNotFoundException(OrderErrorCode.ORDER_NOT_FOUND, orderId));
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "Resource not found: " + orderId));
     }
 
     @Override
@@ -272,10 +272,10 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     public void cancel(UUID orderId, UUID actingUserId) {
         Order order = orderRepository.findByIdAndCustomerId(orderId, actingUserId)
-                .orElseThrow(() -> new ResourceNotFoundException(OrderErrorCode.ORDER_NOT_FOUND, orderId));
+                .orElseThrow(() -> new BusinessException(OrderErrorCode.ORDER_NOT_FOUND, "Resource not found: " + orderId));
         order.cancel();
         log.info("Order cancelled id={} by={}", orderId, actingUserId);
-        events.publishEvent(new OrderCancelledEvent(orderId, clock.instant()));
+        applicationEventPublisher.publishEvent(new OrderCancelledEvent(orderId, clock.instant()));
     }
 }
 ```
@@ -327,6 +327,8 @@ Item construction/pricing is illustrative: complete the domain types, fixtures a
 
 ## 8. Exceptions and error codes
 
+Default to one concrete `BusinessException` with enum-based codes. These constructor signatures illustrate a service whose enums implement `ErrorCode`; adapt them to the actual project as described in `06-exceptions-and-logging.md`. Add subclasses only for separate catch/transaction behavior or dedicated typed error data, never just a code, message or HTTP status.
+
 ```java
 // common/exception/ErrorCode.java
 public interface ErrorCode {
@@ -335,15 +337,15 @@ public interface ErrorCode {
 }
 
 // common/exception/BusinessException.java
-public abstract class BusinessException extends RuntimeException {
+public class BusinessException extends RuntimeException {
     private final ErrorCode errorCode;
 
-    protected BusinessException(ErrorCode errorCode, String message) {
+    public BusinessException(ErrorCode errorCode, String message) {
         super(message);
         this.errorCode = errorCode;
     }
 
-    protected BusinessException(ErrorCode errorCode, String message, Throwable cause) {
+    public BusinessException(ErrorCode errorCode, String message, Throwable cause) {
         super(message, cause);
         this.errorCode = errorCode;
     }
@@ -351,43 +353,29 @@ public abstract class BusinessException extends RuntimeException {
     public ErrorCode getErrorCode() { return errorCode; }
 }
 
-// common/exception/ResourceNotFoundException.java
-public class ResourceNotFoundException extends BusinessException {
-    public ResourceNotFoundException(ErrorCode code, Object id) {
-        super(code, "Resource not found: " + id);
-    }
-}
-
 // order/domain/OrderErrorCode.java
 public enum OrderErrorCode implements ErrorCode {
-    ORDER_NOT_FOUND(HttpStatus.NOT_FOUND),
-    ORDER_ALREADY_CANCELLED(HttpStatus.CONFLICT),
-    ORDER_NOT_CANCELLABLE(HttpStatus.CONFLICT),
-    CURRENCY_MISMATCH(HttpStatus.CONFLICT);
+    ORDER_NOT_FOUND("ONF01", HttpStatus.NOT_FOUND),
+    ORDER_ALREADY_CANCELLED("OAC01", HttpStatus.CONFLICT),
+    ORDER_NOT_CANCELLABLE("ONC01", HttpStatus.CONFLICT),
+    CURRENCY_MISMATCH("CM01", HttpStatus.CONFLICT);
 
+    private final String code;
     private final HttpStatus status;
-    OrderErrorCode(HttpStatus status) { this.status = status; }
+    OrderErrorCode(String code, HttpStatus status) {
+        this.code = code;
+        this.status = status;
+    }
 
-    @Override public String code() { return name(); }
+    @Override public String code() { return code; }
     @Override public HttpStatus httpStatus() { return status; }
 }
 
-// order/domain/OrderAlreadyCancelledException.java
-public class OrderAlreadyCancelledException extends BusinessException {
-    public OrderAlreadyCancelledException(UUID orderId) {
-        super(OrderErrorCode.ORDER_ALREADY_CANCELLED, "Order " + orderId + " is already cancelled");
-    }
-}
-
-// order/domain/CurrencyMismatchException.java
-public class CurrencyMismatchException extends BusinessException {
-    public CurrencyMismatchException() {
-        super(OrderErrorCode.CURRENCY_MISMATCH, "Order items must use the same currency");
-    }
-}
 ```
 
 ## 9. Global exception handler
+
+This is a template for a new API. Existing services reuse their current handler, status mappings and response shape; changing business exception types does not authorize replacing `errorCode` with `code` or changing technical exception handling.
 
 ```java
 // common/web/GlobalExceptionHandler.java
@@ -567,13 +555,13 @@ class OrderServiceImplTest {
 
     @Mock OrderRepository orderRepository;
     @Mock OrderMapper orderMapper;
-    @Mock ApplicationEventPublisher events;
+    @Mock ApplicationEventPublisher applicationEventPublisher;
 
-    OrderServiceImpl service;
+    OrderServiceImpl orderService;
 
     @BeforeEach
     void setUp() {
-        service = new OrderServiceImpl(orderRepository, orderMapper, events, CLOCK);
+        orderService = new OrderServiceImpl(orderRepository, orderMapper, applicationEventPublisher, CLOCK);
     }
 
     @Test
@@ -583,7 +571,7 @@ class OrderServiceImplTest {
                 List.of(new CreateOrderRequest.Line(UUID.randomUUID(), 1)), null);
         given(orderRepository.save(any(Order.class))).willAnswer(invocation -> invocation.getArgument(0));
 
-        service.create(request, actingCustomerId);
+        orderService.create(request, actingCustomerId);
 
         ArgumentCaptor<Order> savedOrder = ArgumentCaptor.forClass(Order.class);
         then(orderRepository).should().save(savedOrder.capture());
@@ -596,8 +584,9 @@ class OrderServiceImplTest {
         Order order = anOrderOwnedBy(UUID.randomUUID());
         given(orderRepository.findWithItemsById(orderId)).willReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> service.getById(orderId, UUID.randomUUID()))
-                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> orderService.getById(orderId, UUID.randomUUID()))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_NOT_FOUND));
     }
 
     @Test
@@ -606,9 +595,10 @@ class OrderServiceImplTest {
         Order order = aCancelledOrderOwnedBy(userId);
         given(orderRepository.findByIdAndCustomerId(any(), eq(userId))).willReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> service.cancel(UUID.randomUUID(), userId))
-                .isInstanceOf(OrderAlreadyCancelledException.class);
-        then(events).shouldHaveNoInteractions();
+        assertThatThrownBy(() -> orderService.cancel(UUID.randomUUID(), userId))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.getErrorCode()).isEqualTo(OrderErrorCode.ORDER_ALREADY_CANCELLED));
+        then(applicationEventPublisher).shouldHaveNoInteractions();
     }
 }
 ```
@@ -622,7 +612,7 @@ class OrderServiceImplTest {
 @TestPropertySource(properties = "app.cors.allowed-origins[0]=https://client.example")
 class OrderControllerTest {
 
-    @Autowired MockMvcTester mvc;
+    @Autowired MockMvcTester mockMvcTester;
     @MockitoBean OrderService orderService;
     @MockitoBean JwtDecoder jwtDecoder;
 
@@ -632,7 +622,7 @@ class OrderControllerTest {
                 { "lines": [] }
                 """;
 
-        assertThat(mvc.post().uri("/api/v1/orders")
+        assertThat(mockMvcTester.post().uri("/api/v1/orders")
                 .with(jwt())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
@@ -652,7 +642,7 @@ class OrderControllerTest {
                 { "lines": [{ "productId": "6b1f6a4e-0d0b-4a53-9a39-3f0c4b6f6b11", "quantity": 1 }] }
                 """;
 
-        assertThat(mvc.post().uri("/api/v1/orders")
+        assertThat(mockMvcTester.post().uri("/api/v1/orders")
                 .with(jwt().jwt(token -> token.subject(actorId.toString())))
                 .contentType(MediaType.APPLICATION_JSON).content(body))
                 .hasStatus(HttpStatus.CREATED);
@@ -662,7 +652,7 @@ class OrderControllerTest {
 
     @Test
     void get_withoutToken_returns401() {
-        assertThat(mvc.get().uri("/api/v1/orders/{id}", UUID.randomUUID()))
+        assertThat(mockMvcTester.get().uri("/api/v1/orders/{id}", UUID.randomUUID()))
                 .hasStatus(HttpStatus.UNAUTHORIZED);
     }
 }
@@ -688,15 +678,15 @@ public class TestcontainersConfiguration {
 @Import(TestcontainersConfiguration.class)
 class OrderRepositoryTest {
 
-    @Autowired OrderRepository repository;
-    @Autowired TestEntityManager em;
+    @Autowired OrderRepository orderRepository;
+    @Autowired TestEntityManager testEntityManager;
 
     @Test
     void findByIdAndCustomerId_whenOwnerDiffers_returnsEmpty() {
-        Order saved = em.persistAndFlush(OrderFixtures.anOrder().build());
-        em.clear();
+        Order saved = testEntityManager.persistAndFlush(OrderFixtures.anOrder().build());
+        testEntityManager.clear();
 
-        assertThat(repository.findByIdAndCustomerId(saved.getId(), UUID.randomUUID())).isEmpty();
+        assertThat(orderRepository.findByIdAndCustomerId(saved.getId(), UUID.randomUUID())).isEmpty();
     }
 }
 ```
@@ -839,23 +829,23 @@ For an imperative service calling another microservice, split remote validation 
 ```java
 @Service
 public class OpenAccountServiceImpl implements OpenAccountService {
-    private final CustomerClient customers;
-    private final AccountWriter writer;
-    private final TransactionTemplate transactions;
+    private final CustomerClient customerClient;
+    private final AccountWriter accountWriter;
+    private final TransactionTemplate transactionTemplate;
 
-    public OpenAccountServiceImpl(CustomerClient customers, AccountWriter writer,
-                                   TransactionTemplate transactions) {
-        this.customers = customers;
-        this.writer = writer;
-        this.transactions = transactions;
+    public OpenAccountServiceImpl(CustomerClient customerClient, AccountWriter accountWriter,
+                                   TransactionTemplate transactionTemplate) {
+        this.customerClient = customerClient;
+        this.accountWriter = accountWriter;
+        this.transactionTemplate = transactionTemplate;
     }
 
     // No class-level or method-level @Transactional on this orchestrator.
     @Override
     public AccountResponse open(OpenAccountRequest request, UUID actingCustomerId) {
-        CustomerSnapshot customer = customers.getEligibleCustomer(actingCustomerId);
-        return Objects.requireNonNull(transactions.execute(status ->
-                writer.open(request, actingCustomerId, customer)));
+        CustomerSnapshot customer = customerClient.getEligibleCustomer(actingCustomerId);
+        return Objects.requireNonNull(transactionTemplate.execute(status ->
+                accountWriter.open(request, actingCustomerId, customer)));
     }
 }
 ```

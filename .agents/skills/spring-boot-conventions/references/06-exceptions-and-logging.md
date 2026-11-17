@@ -14,39 +14,60 @@
 
 ```
 RuntimeException
-└── BusinessException            (abstract, carries an ErrorCode)
-    ├── ResourceNotFoundException   -> 404
-    ├── ConflictException           -> 409 (duplicate, illegal state, version clash)
-    ├── ValidationException         -> 400/422 (business-level validation, not Bean Validation)
-    ├── ForbiddenOperationException -> 403
-    └── <Feature>-specific exceptions, e.g. OrderAlreadyCancelledException extends ConflictException
+└── BusinessException            (concrete, shared for business errors)
+    └── Optional specialized type only for type-dependent handling or typed error data
 ```
 
 Rules:
-- Business problems are unchecked and extend `BusinessException`. Do not throw `RuntimeException`, `IllegalStateException`, or `Exception` for business situations.
-- Each exception carries an `ErrorCode` with a stable string `code`, an HTTP status, and a message template. Messages are in English, free of sensitive data.
-- Create a feature-specific exception when a client or caller needs to distinguish the case; otherwise use the generic ones with a specific `ErrorCode`.
+- Default to a shared concrete `BusinessException` for business errors handled alike. Do not throw `RuntimeException`, `IllegalStateException`, or `Exception` for business situations.
+- Represent business error codes with an enum, reusing the project's existing error-code contract and HTTP mapping. If errors differ only in code, message or HTTP status, add an enum value and use the shared exception; do not create a subclass just to bind those values. Messages are in English, free of sensitive data.
+- Create a subclass only when the Java type has a role in control flow: a caller must catch it separately, transaction rollback rules distinguish it by type, or the error must carry dedicated typed data. API clients distinguish ordinary business cases by stable error codes, not Java exception class names.
 - Programming errors (`IllegalArgumentException` for violated preconditions, `NullPointerException`) are not business exceptions; they surface as `500`.
-- Include context in the exception fields (ids), not only in the message string, so the handler and logs can use it.
+- Use existing structured context fields when needed; add a specialized type only when dedicated typed data is required, not merely to format an id into a message.
 - Always preserve the cause when wrapping.
 
-`ErrorCode` is an interface implemented per feature by an enum:
+## Error codes
+
+Use the enum already defined by the service. In the templates, `ErrorCode` is a shared interface implemented per feature by an enum; a service with a single `ErrorCode` enum need not adopt that extra interface:
 
 ```java
 public enum OrderErrorCode implements ErrorCode {
-    ORDER_NOT_FOUND(HttpStatus.NOT_FOUND),
-    ORDER_ALREADY_CANCELLED(HttpStatus.CONFLICT);
-    // code() returns name(); httpStatus() returns the status
+    ORDER_NOT_FOUND("ONF01", HttpStatus.NOT_FOUND),
+    ORDER_ALREADY_CANCELLED("OAC01", HttpStatus.CONFLICT);
+    // Store the explicit code; code() returns it, httpStatus() returns the status.
+    // See 13-code-templates.md for the complete enum.
 }
 ```
 
-Codes are `UPPER_SNAKE_CASE`, globally unique, never reused, never renamed once released (clients depend on them).
+Enum constant names are descriptive `UPPER_SNAKE_CASE`. Every constant also declares an explicit stable identifier independent of its Java name, e.g. `ACCOUNT_NOT_FOUND("ANF01", HttpStatus.NOT_FOUND, "Account not found")`. Store it in a `String code` field and expose it through the project's accessor (`getCode()` in Core). Do not derive it from `ordinal()` or infer it at runtime from the name.
+
+Assigned identifiers are nonblank and unique within the service, including across feature enums. Never reuse or change an assigned identifier, and preserve released symbolic API codes as well. Add a test for nonblank/unique identifiers when extending the catalog. This does not require a shared business-error jar across services.
+
+Prefer `throw new BusinessException(ErrorCode.CUSTOMER_NOT_ELIGIBLE);` when that constructor and enum exist. If the constructor also requires a message, pass it. For the template's interface plus feature enum, the equivalent is:
+
+```java
+throw new BusinessException(CustomerErrorCode.CUSTOMER_NOT_ELIGIBLE, "Customer is not active");
+```
+
+The enum value must retain the existing mapping, such as `CUSTOMER_NOT_ELIGIBLE` -> `HttpStatus.CONFLICT` (`409`). Do not introduce `CustomerNotEligibleException` solely to bind this code and status.
+
+**Current digital-bank compatibility:** Core has an `ErrorCode` enum with the existing statuses and default messages. Use `BusinessException(ErrorCode)` or `BusinessException(ErrorCode, String message)` for new business errors:
+
+```java
+throw new BusinessException(ErrorCode.CUSTOMER_NOT_ELIGIBLE);
+// Override the message when a distinct reason shares the same error code and status.
+throw new BusinessException(ErrorCode.CUSTOMER_NOT_ELIGIBLE, "Customer not found");
+```
+
+The original `BusinessException(String errorCode, String message, HttpStatus status)` constructor remains for compatibility. The enum overloads adapt to it, and `getErrorCode()` still returns the symbolic name used by the existing handler and response contract. Core's assigned identifiers are `ACCOUNT_NOT_FOUND` -> `ANF01`, `CUSTOMER_NOT_ELIGIBLE` -> `CNE01`, and `UNSUPPORTED_CURRENCY` -> `UC01`. These are available through `ErrorCode.getCode()`; do not replace the current response's `errorCode` with the short identifier or add response fields without an explicit API contract change.
 
 ## Global exception handler
 
+Reuse the existing global handler and HTTP status mappings for business errors. Preserve released error codes, statuses and the complete API response format. In Core this includes the `errorCode` and `timestamp` properties and existing ProblemDetail fields; do not rename `errorCode` to `code` or replace the handler merely to follow the template below. Technical exception handling, including database conflicts and upstream timeouts, is unchanged by this business-exception convention.
+
 For annotated MVC controllers, use one `common/web/GlobalExceptionHandler` extending servlet `ResponseEntityExceptionHandler`. WebFlux uses the reactive class with the same simple name and different signatures/exceptions; functional routes/gateways may need `WebExceptionHandler`/`ErrorWebExceptionHandler`. Security filter-chain failures require matching entry points/access-denied handlers. Keep one consistent ProblemDetail contract across these boundaries. See `13-code-templates.md` for the template. It must:
 
-1. Map `BusinessException` -> its status, `code`, `detail`, plus `traceId`.
+1. Map `BusinessException` through its existing error-code/status mapping and response contract; for new APIs the default is status, `code`, `detail`, plus `traceId`.
 2. Override validation handling (`MethodArgumentNotValidException`, `HandlerMethodValidationException`, `ConstraintViolationException`) -> `400` with `code = VALIDATION_ERROR` and an `errors` list of field/message pairs.
 3. Map `ObjectOptimisticLockingFailureException` -> `409`, `DataIntegrityViolationException` -> `409` (without leaking constraint/SQL text), `AccessDeniedException` -> `403`, `AuthenticationException` -> `401` (normally handled by the security filter chain).
 4. Map unreadable body (`HttpMessageNotReadableException`) -> `400` with a generic message (never echo parser internals).

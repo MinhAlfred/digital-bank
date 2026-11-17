@@ -34,7 +34,7 @@ Pure internal helpers (price calculators, validators) are plain `@Component` cla
 ## Method design
 
 - Return **DTOs** (`OrderResponse`), never entities. Accept DTOs or primitives/IDs. Entities are an implementation detail of `service.impl`.
-- Lookup naming: `getById` throws `ResourceNotFoundException` when absent; `findById` returns `Optional`.
+- Lookup naming: `getById` throws `BusinessException` with the appropriate not-found error code when absent; `findById` returns `Optional`. Retain a dedicated exception type only when handling depends on that type.
 - Writes return the resulting representation (or `void` for delete/cancel).
 - Query methods are side-effect free.
 - Avoid boolean flags and long parameter lists; introduce a command/criteria record.
@@ -58,11 +58,11 @@ Pure internal helpers (price calculators, validators) are plain `@Component` cla
 Two levels:
 
 1. **Boundary validation** (Bean Validation on request DTOs) - shape, size, format.
-2. **Business validation** inside the service/entity - uniqueness, state transitions, cross-field and cross-aggregate rules. Throw `BusinessException` subclasses (see `06-exceptions-and-logging.md`).
+2. **Business validation** inside the service/entity - uniqueness, state transitions, cross-field and cross-aggregate rules. Default to the shared `BusinessException` with an enum-based error code. Differences in code, message or HTTP status alone do not warrant subclasses; use one only for type-dependent handling, transaction rules or typed error data (see `06-exceptions-and-logging.md`).
 
 Put rules on the entity when they concern its own state (`order.cancel(clock)` rejects illegal transitions). Put rules in the service when they need collaborators (repositories, other services).
 
-Uniqueness: check in the service for a friendly error **and** enforce with a unique DB constraint; translate `DataIntegrityViolationException` to a `ConflictException` as the safety net for races.
+Uniqueness: check in the service for a friendly error **and** enforce with a unique DB constraint; retain the existing `DataIntegrityViolationException` conflict mapping/handler as the safety net for races. Do not introduce a subclass merely to assign HTTP `409`.
 
 ## Authorization in services
 

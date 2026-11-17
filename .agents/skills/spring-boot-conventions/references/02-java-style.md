@@ -26,6 +26,7 @@
 
 - Classes/records/enums `UpperCamelCase`; methods/fields/variables `lowerCamelCase`; constants `UPPER_SNAKE_CASE`; packages lowercase without underscores.
 - Names reveal intent. `remainingStockQuantity`, not `qty2`. No Hungarian notation, no `I` prefix on interfaces, no `Abstract` prefix unless truly abstract-only.
+- Dependency fields and constructor parameters use the declared type's full name in lower camel case: `CurrencyRepository currencyRepository`, `AccountStatusHistoryRepository accountStatusHistoryRepository`, `CustomerGateway customerGateway`, `EntityManager entityManager`. Use the same names for injected mocks/test collaborators. Avoid aliases such as `currencies`, `accounts`, `history`, `customers`, `repo`, `em` or `tx`. For multiple dependencies of the same type, add a meaningful qualifier, e.g. `primaryCurrencyRepository`.
 - Booleans read as questions: `isActive`, `hasPendingPayment`, `canCancel`. Avoid negative names (`isNotEnabled`).
 - Methods are verbs; service verbs are standardized: `create`, `getById` (throws if missing), `findById` (returns `Optional`), `search`, `update`, `delete`/`cancel`, `existsBy...`.
 - Acronyms are words: `HttpClient`, `UserId`, `parseJson`, not `HTTPClient`.

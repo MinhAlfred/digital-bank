@@ -64,12 +64,15 @@ Use this when reviewing a PR, a diff, or the agent's own output before presentin
 - [ ] Dependencies are BOM-managed; no unreviewed new dependency
 
 ### Exceptions and logging
-- [ ] Business errors use `BusinessException` subclasses with an `ErrorCode`; none swallowed
+- [ ] Business errors default to shared `BusinessException` with enum-based error codes; subclasses require type-dependent handling, transaction rules or typed error data, not just a different code/message/status; none swallowed
+- [ ] Existing business error codes, HTTP mappings and response format are preserved through the existing global handler; technical exception handling is unchanged
+- [ ] Every error enum constant has an explicit stable identifier (e.g. `ANF01`), nonblank and unique across the service's error enums; released identifiers are not changed or reused
 - [ ] Logged once, parameterized, correct level; no `System.out`; no log-and-rethrow
 - [ ] Expected 4xx are not logged as errors with stack traces
 
 ### Java style
 - [ ] Constructor injection, `final` fields, no field injection
+- [ ] Dependency fields, constructor parameters and test doubles use full type-based names (`currencyRepository`, `customerGateway`, `transactionTemplate`), with meaningful qualifiers when the same type occurs more than once
 - [ ] Records for DTOs/properties/events; `Optional` only as return type; no null collections
 - [ ] Naming follows the cheat sheet; methods short and focused; guard clauses over nesting
 - [ ] No commented-out code, dead code, unused imports; `TODO` has a ticket id

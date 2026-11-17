@@ -40,7 +40,7 @@ Do not mix servlet security/error-handler templates into WebFlux. Virtual thread
 
 ### Java and values
 
-6. Constructor injection with `private final` dependencies; no field/setter injection. Prefer immutable records and modern language features supported by the project's Java version.
+6. Constructor injection with `private final` dependencies; no field/setter injection. Name dependency fields, constructor parameters and test doubles after their declared type in lower camel case (`CurrencyRepository currencyRepository`, not `currencies`; `TransactionTemplate transactionTemplate`, not `tx`). Prefer immutable records and modern language features supported by the project's Java version.
 7. Never return null collections. `Optional` is for return types, not fields/parameters. Apply JSpecify defaults per package when used; parent-package annotations do not cover subpackages.
 8. **Money uses `BigDecimal` plus a currency.** Never use `double`/`float`. Define currency-specific scale, precision and rounding explicitly; persist as `NUMERIC/DECIMAL`. Migrating a minor-unit integer schema requires a forward migration, a documented conversion factor per currency and contract/data verification. Never reinterpret existing integers silently.
 9. Use `java.time`, store instants in UTC, and inject `Clock` for business time.
@@ -49,6 +49,8 @@ Do not mix servlet security/error-handler templates into WebFlux. Virtual thread
 
 10. REST defaults: versioned plural kebab-case paths, correct status codes, `201` + `Location` for creation, bounded pagination and whitelisted sorting. Preserve released contracts unless changing them is in scope.
 11. Produce consistent `ProblemDetail` with stable `code`. Use the handler for the actual runtime, plus security entry points/access-denied handlers for filter-chain errors. Never expose SQL, stack traces, secrets or internal hosts.
+    For business errors handled alike, default to a shared concrete `BusinessException` with enum-based error codes; add a code instead of a subclass when only the code, message or HTTP status differs. Create a subclass only when its type affects handling, transaction rules or typed error data. Reuse the existing constructor, global handler, HTTP mappings and response format; see [exception guidance](references/06-exceptions-and-logging.md). Keep technical exception handling unchanged.
+    Each error enum value also declares an explicit stable identifier, e.g. `ACCOUNT_NOT_FOUND("ANF01", HttpStatus.NOT_FOUND, "Account not found")`. Keep identifiers nonblank and unique within the service, including across feature enums; never derive them from enum ordinals or silently replace an existing API error code.
 12. Validate request shape at the boundary and business invariants in the service/domain. Caller/owner identity comes from validated authentication or a verified mapping from it. Client-provided owner IDs are never authorization. Creating for another owner requires explicit permission and a service-level check.
 13. Authenticate unless explicitly public; enforce ownership in the owning service. Gateways sanitize caller-supplied trusted headers; backends validate user/service credentials themselves. Never log tokens, secrets or personal data.
 
