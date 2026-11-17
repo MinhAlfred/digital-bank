@@ -84,9 +84,12 @@ order-service/
         external/    customer/CustomerResponse (consumer-owned wire DTO)
       event/         IntegrationEventEnvelope (when needed)
       exception/     BusinessException, ErrorCode
-      web/           GlobalExceptionHandler (runtime-specific), ApiPaths
+        handler/     GlobalExceptionHandler (runtime-specific)
+      web/           ProblemDetailFactory, ApiPaths (HTTP support, not controllers/DTOs)
       persistence/   AuditableEntity (JPA only)
     config/          SecurityConfig, ClockConfig, client/broker configuration
+    security/
+      handler/       AuthenticationEntryPoint, AccessDeniedHandler implementations
     order/
       web/           OrderController
       service/       OrderService
@@ -107,7 +110,10 @@ Omit unused packages. Gateways need no empty domain/repository/persistence helpe
 
 | Package | Responsibility | Forbidden dependencies |
 |---|---|---|
-| `web` | HTTP binding, principal mapping, validation, response | repository, service implementation, entity |
+| `web` | Controllers: HTTP binding, principal mapping, validation, response | repository, service implementation, entity |
+| `common.exception.handler` | Global exception advice for the actual runtime | feature controllers, repositories, entities |
+| `common.web` | Shared HTTP response construction, e.g. ProblemDetailFactory | business services, repositories, entities |
+| `security.handler` | Authentication entry points and access-denied responses | business services, repositories, entities |
 | `service` | Public feature contract using DTOs/IDs | HTTP request/response types, web, implementation |
 | `service.impl` | Use cases, ownership, transactions, orchestration | web, another feature's repository/entity |
 | `domain` | Entities/value types, local invariants/events | web, service, repository, transport DTOs |
@@ -116,6 +122,8 @@ Omit unused packages. Gateways need no empty domain/repository/persistence helpe
 | `integration` | External protocol/error/DTO translation | another service's implementation/entities |
 
 DTOs may use an intentional stable local domain enum/value type, never a persistence entity. `common` is not an unrestricted dependency exception. Exclude common/config from feature cycle slicing, then enforce their own dependency rules. Local interfaces stay local; remote services use explicit wire contracts.
+
+Keep feature `web` packages controller-only. A shared response factory can serve both exception and security handlers without placing them together in the controller package. Apply this layout to new or in-scope code; do not reorganize unrelated services.
 
 ## Component scanning and nullness
 

@@ -30,8 +30,10 @@ Use this when reviewing a PR, a diff, or the agent's own output before presentin
 ### Design and layering
 - [ ] Code is in the right feature and layer; dependency direction `web -> service -> repository -> domain`
 - [ ] Controller is thin; no business logic, repository, or `@Transactional` in it
+- [ ] Feature `web` contains controllers only; shared advice is in `common.exception.handler`, response factories in `common.web`, security handlers in `security.handler`
 - [ ] Public feature service has interface + `Impl`; callers use the interface; DTOs live in this service's `common.dto.<feature>`, wrappers in `common.dto`
 - [ ] Entities do not leak into controllers, DTOs, events, or other features
+- [ ] Entity-to-DTO property mappings use MapStruct with Spring component model, strict unmapped targets and the necessary annotation processors/Lombok binding
 - [ ] Local features use interfaces/events; remote services use HTTP/message adapters and independent local DTOs; no shared entities/repositories/database access
 - [ ] No god class, no utility dumping ground, no duplicated logic that belongs in one place
 
@@ -68,6 +70,7 @@ Use this when reviewing a PR, a diff, or the agent's own output before presentin
 - [ ] Existing business error codes, HTTP mappings and response format are preserved through the existing global handler; technical exception handling is unchanged
 - [ ] Every error enum constant has an explicit stable identifier (e.g. `ANF01`), nonblank and unique across the service's error enums; released identifiers are not changed or reused
 - [ ] Logged once, parameterized, correct level; no `System.out`; no log-and-rethrow
+- [ ] Loggers use `@Slf4j` when Lombok is configured; no redundant manual logger declaration
 - [ ] Expected 4xx are not logged as errors with stack traces
 
 ### Java style

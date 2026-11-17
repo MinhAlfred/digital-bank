@@ -35,8 +35,9 @@ Do not mix servlet security/error-handler templates into WebFlux. Virtual thread
 1. **Respect service boundaries.** Each microservice owns its data, migrations, configuration, DTOs and release lifecycle. Local features may call service interfaces; separate services use explicit HTTP/message contracts. Never import another service's entity/repository or query its tables.
 2. **Organize by feature inside each service.** Use `web`, `service` (+ `service.impl`), `repository`, `domain`, `mapper` and adapters as needed. DTOs live under this service's `common.dto.<feature>`; generic wrappers under `common.dto`. `common` is local to a service, not a system-wide DTO jar.
 3. **Keep controllers thin.** Bind, validate, identify the caller, delegate, shape the response. No business logic, repositories or transactions. Workers/listeners delegate business work too.
+   Keep feature `web` packages for controllers. Shared exception advice belongs in `common.exception.handler`, HTTP response factories in `common.web`, and authentication/access-denied handlers in `security.handler`; do not collect unrelated HTTP infrastructure beside controllers.
 4. **Public feature services have interfaces.** `XxxService` and `service.impl.XxxServiceImpl`; callers depend on the interface. Internal calculators/validators need no ceremonial interface.
-5. **Use DTO records at service/API boundaries.** Never return persistence entities. Use MapStruct when configured; add its dependency and annotation processor deliberately when needed, otherwise use an explicit mapper. DTOs do not belong in `common.web`.
+5. **Use DTO records at service/API boundaries.** Never return persistence entities. Use MapStruct for new or changed entity-to-DTO property mappings, with Spring component model and `unmappedTargetPolicy = ERROR`. Configure its dependency and annotation processor, plus `lombok-mapstruct-binding` when mapping Lombok-generated accessors. Preserve handwritten mappers outside the task scope. DTOs do not belong in `common.web`.
 
 ### Java and values
 
@@ -63,7 +64,7 @@ Do not mix servlet security/error-handler templates into WebFlux. Virtual thread
 
 ### Quality
 
-18. SLF4J parameterized logs; log unexpected exceptions once at the handling boundary. Propagate tracing using runtime-aware facilities.
+18. SLF4J parameterized logs; use Lombok `@Slf4j` where Lombok is configured instead of declaring a manual logger. Log unexpected exceptions once at the handling boundary. Propagate tracing using runtime-aware facilities.
 19. Cover changed behavior at the relevant test level. Use real infrastructure for persistence/messaging integration tests. For Maven `*IT`, configure Failsafe's `integration-test` and `verify` goals before relying on discovery; see [build guidance](references/10-build-and-quality.md).
 20. Run installed formatters/quality gates; preserve surrounding style when absent. New services configure chosen tools explicitly. Never report Spotless, ArchUnit or coverage as passing when not configured/run.
 21. Use the Boot BOM for managed dependencies and a compatible Cloud BOM when needed. Pin plugins not managed by a parent. Explain additions; keep unrelated upgrades separate.

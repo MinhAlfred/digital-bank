@@ -63,6 +63,7 @@
 
 - **Constructor injection only.** A class with a single constructor needs no `@Autowired`.
 - Prefer explicit constructors or `@RequiredArgsConstructor` (Lombok) on classes with only `final` dependencies.
+- When Lombok is configured, declare loggers with `@Slf4j`; do not repeat `LoggerFactory.getLogger(...)` or a manual logger field. Keep parameterized logging and exception-handling rules from reference 06.
 - No circular dependencies. If two beans need each other, extract a third collaborator or use an event. Never enable `spring.main.allow-circular-references`.
 - Lombok is allowed in this limited set: `@RequiredArgsConstructor`, `@Getter`, `@Slf4j`, `@NoArgsConstructor(access = PROTECTED)` (entities), `@Builder` on non-entity classes with many optional fields.
 - **Banned:** `@Data`, `@Value` (use records), `@EqualsAndHashCode`/`@ToString` on entities, `@SneakyThrows`, `@Setter` on entities, `@Builder` on JPA entities, `@AllArgsConstructor` on entities.

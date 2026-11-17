@@ -49,6 +49,8 @@ Exact artifact names differ across 4.x minors: check the project's `pom.xml`/Boo
 
 Other libraries commonly allowed: MapStruct (+ annotation processor), Lombok (limited), Testcontainers, ArchUnit, Awaitility, WireMock, springdoc-openapi, ShedLock, Caffeine, Resilience4j (only if not using Spring's built-in resilience annotations).
 
+For MapStruct mappings, declare `org.mapstruct:mapstruct` and `mapstruct-processor` with the same explicit version when the BOM does not manage them. Include the processor in the actual main compiler execution alongside existing processors. With Lombok-generated accessors, include `org.projectlombok:lombok-mapstruct-binding` on that processor path too. Test processors are needed only when tests define generated mappers. Keep generated mapper implementations under build output, not source control.
+
 ## Quality plugins
 
 The table is a setup recommendation for new services, not evidence these tools are installed. Detect actual configuration first. Run existing gates; add a new tool only when needed/in scope, with dependency/plugin configuration and compatible versions. Existing projects keep their chosen thresholds and commit convention.

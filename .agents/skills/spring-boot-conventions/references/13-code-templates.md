@@ -223,9 +223,8 @@ public interface OrderService {
 // order/service/impl/OrderServiceImpl.java
 @Service
 @Transactional(readOnly = true)
+@Slf4j
 public class OrderServiceImpl implements OrderService {
-
-    private static final Logger log = LoggerFactory.getLogger(OrderServiceImpl.class);
 
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
@@ -378,11 +377,10 @@ public enum OrderErrorCode implements ErrorCode {
 This is a template for a new API. Existing services reuse their current handler, status mappings and response shape; changing business exception types does not authorize replacing `errorCode` with `code` or changing technical exception handling.
 
 ```java
-// common/web/GlobalExceptionHandler.java
+// common/exception/handler/GlobalExceptionHandler.java
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
-
-    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(BusinessException.class)
     ProblemDetail handleBusiness(BusinessException ex) {
