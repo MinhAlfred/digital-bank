@@ -1,0 +1,16 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+app:
+  security:
+    jwt:
+      secret: test-only-customer-key-32-bytes-minimum
+      issuer: https://issuer.example.test
+      audience: digital-bank-test
+
+logging:
+  level:
+    org.hibernate.orm.jdbc.error: "OFF"
