@@ -7,15 +7,18 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import thitkho.corebankingservice.common.exception.handler.GlobalExceptionHandler;
+import thitkho.corebankingservice.common.web.ProblemDetailFactory;
 
 import java.net.URI;
 import java.time.Instant;
+import java.time.Clock;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class GlobalExceptionHandlerTest {
-    private final GlobalExceptionHandler globalExceptionHandler = new GlobalExceptionHandler();
+    private final GlobalExceptionHandler globalExceptionHandler = new GlobalExceptionHandler(new ProblemDetailFactory(Clock.systemUTC()));
 
     @ParameterizedTest
     @MethodSource("businessErrors")

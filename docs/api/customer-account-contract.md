@@ -1,6 +1,6 @@
 # Hợp đồng Customer và Account — Tuần 2, bước 2
 
-Tài liệu chốt thiết kế ở bước 2 để triển khai ở bước 3–8. Bước 3 đã triển khai hai API Customer và security riêng; bước 4 đã triển khai adapter Core và xác định owner qua `/me`. Các API Account vẫn thuộc bước sau. Giữ các đường dẫn `/api/customers` và `/api/accounts` theo kế hoạch tuần 2; chưa thêm tiền tố phiên bản. Xem [hướng dẫn Customer](../customer-service.md) và [tích hợp Core → Customer](../core-customer-integration.md) để cấu hình và kiểm thử.
+Tài liệu chốt thiết kế ở bước 2 để triển khai ở bước 3–8. Bước 3 đã triển khai hai API Customer và security riêng; bước 4 đã triển khai adapter Core và xác định owner qua `/me`; bước 5 đã triển khai ba API Account và DTO response. Giữ các đường dẫn `/api/customers` và `/api/accounts` theo kế hoạch tuần 2; chưa thêm tiền tố phiên bản. Xem [hướng dẫn Customer](../customer-service.md), [tích hợp Core → Customer](../core-customer-integration.md) và [Account APIs](../account-api.md) để cấu hình và kiểm thử.
 
 ## 1. Phạm vi và quyền sở hữu dữ liệu
 
@@ -187,12 +187,12 @@ Giữ business `ProblemDetail` của Core: `type`, `title`, `status`, `detail`, 
 | Customer | `CUSTOMER_NOT_FOUND` | `CNF01` | 404 | `/me` chưa có hồ sơ | Đã triển khai bước 3 |
 | Customer | `CUSTOMER_ALREADY_EXISTS` | `CAE01` | 409 | Subject đã có hồ sơ, gồm xung đột đồng thời | Đã triển khai bước 3 |
 | Customer | `CUSTOMER_EMAIL_ALREADY_EXISTS` | `CEA01` | 409 | Email đã có hồ sơ khác, gồm xung đột đồng thời | Đã triển khai bước 3 |
-| Mỗi backend | `VALIDATION_ERROR` | `VE01` | 400 | Thiếu field bắt buộc, ràng buộc Bean Validation | Customer đã có; Core dự kiến bước 4–5 |
-| Mỗi backend | `MALFORMED_REQUEST` | `MR01` | 400 | JSON sai, sai kiểu, enum/UUID không parse được, field không được phép | Customer đã có; Core dự kiến bước 4–5 |
+| Mỗi backend | `VALIDATION_ERROR` | `VE01` | 400 | Thiếu field bắt buộc, ràng buộc Bean Validation | Customer đã có; Core đã có bước 5 |
+| Mỗi backend | `MALFORMED_REQUEST` | `MR01` | 400 | JSON sai, sai kiểu, enum/UUID không parse được, field không được phép | Customer đã có; Core đã có bước 5 |
 | Mỗi backend | `UNAUTHENTICATED` | `UA01` | 401 | Thiếu/token sai/hết hạn/subject không hợp lệ | Customer đã có; Core adapter đã có bước 4, security handler bước 7 |
 | Mỗi backend | `ACCESS_DENIED` | `AD01` | 403 | Đã xác thực nhưng thiếu quyền endpoint; không dùng cho Account khác chủ | Customer đã có; Core adapter đã có bước 4, security handler bước 7 |
-| Customer | `DATA_CONFLICT` | `DC01` | 409 | Lỗi toàn vẹn dữ liệu không xác định là trùng subject/email | Đã triển khai bước 3 |
-| Customer | `INTERNAL_ERROR` | `IE01` | 500 | Lỗi không mong đợi, nội dung chung | Đã triển khai bước 3 |
+| Mỗi backend | `DATA_CONFLICT` | `DC01` | 409 | Lỗi toàn vẹn dữ liệu; Customer phân biệt trùng subject/email trước khi dùng lỗi chung | Customer bước 3; Core bước 5 |
+| Mỗi backend | `INTERNAL_ERROR` | `IE01` | 500 | Lỗi không mong đợi, nội dung chung | Customer bước 3; Core bước 5 |
 | Core | `UPSTREAM_TIMEOUT` | `UT01` | 504 | Chờ Customer quá thời hạn | Đã triển khai bước 4 |
 | Core | `CUSTOMER_SERVICE_UNAVAILABLE` | `CSU01` | 503 | Không kết nối được Customer hoặc Customer trả 5xx | Đã triển khai bước 4 |
 | Core | `INVALID_CUSTOMER_RESPONSE` | `ICR01` | 502 | Customer trả thành công nhưng thiếu/sai ID hoặc status hợp lệ | Đã triển khai bước 4 |
@@ -220,11 +220,11 @@ Gateway hiện có lỗi riêng dạng `{"status":401,"message":"Missing token"}
 | Timeout | `504 UPSTREAM_TIMEOUT`, không ghi Account | Cùng lỗi; không trả dữ liệu khi chưa xác minh owner |
 | Response thành công sai schema/status | `502 INVALID_CUSTOMER_RESPONSE` | Cùng lỗi; không trả dữ liệu |
 
-Không forward nguyên body lỗi upstream hoặc đổi mọi lỗi thành Customer không hợp lệ. HTTP dùng timeout hữu hạn từ `app.customer-service`; mặc định connect 2 giây, read 3 giây, không tự retry trong tuần 2. Adapter không follow redirect để bảo vệ token. Customer bị đổi trạng thái sau lúc kiểm tra là khả năng của hệ thống phân tán: kiểm tra HTTP không khóa DB Customer. Không giữ transaction Core chờ HTTP hoặc tuyên bố transaction bao trùm hai DB.
+Không forward nguyên body lỗi upstream hoặc đổi mọi lỗi thành Customer không hợp lệ. HTTP dùng timeout hữu hạn từ `app.customer-service`; mặc định hiện tại connect 2 giây, read 30 giây, không tự retry trong tuần 2. Adapter không follow redirect để bảo vệ token. Customer bị đổi trạng thái sau lúc kiểm tra là khả năng của hệ thống phân tán: kiểm tra HTTP không khóa DB Customer. Không giữ transaction Core chờ HTTP hoặc tuyên bố transaction bao trùm hai DB.
 
 ## 8. DTO và nghiệm thu cho các bước tiếp theo
 
-DTO dự kiến, mỗi service tự sở hữu dưới root package của mình:
+DTO đã triển khai ở bước 3–5, mỗi service tự sở hữu dưới root package của mình:
 
 | Service | Package suffix | DTO |
 |---|---|---|

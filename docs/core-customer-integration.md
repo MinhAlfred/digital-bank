@@ -11,7 +11,7 @@ app:
   customer-service:
     base-url: http://localhost:4001
     connect-timeout: 2s
-    read-timeout: 3s
+    read-timeout: 30s
 ```
 
 These are also the defaults when no overrides are provided. Merge this block into Core's existing local `application.yml`, or override it with `APP_CUSTOMER_SERVICE_BASE_URL`, `APP_CUSTOMER_SERVICE_CONNECT_TIMEOUT` and `APP_CUSTOMER_SERVICE_READ_TIMEOUT`. Replace the earlier local URL using port `8081` with port `4001`. Local configuration remains ignored by Git. Use HTTPS when traffic leaves the local development environment.
@@ -25,8 +25,9 @@ The base URL must be HTTP(S), have a host, and omit credentials, query and fragm
 The internal Java service signatures are now:
 
 ```java
-Account openAccount(ProductType productType, String currency, String bearerToken);
-Account getOwnedAccount(UUID accountId, String bearerToken);
+AccountResponse openAccount(ProductType productType, String currency, String bearerToken);
+AccountResponse getOwnedAccount(UUID accountId, String bearerToken);
+AccountBalanceResponse getOwnedAccountBalance(UUID accountId, String bearerToken);
 ```
 
 Opening an account derives its owner from `/me` and requires an ACTIVE customer. The remote lookup completes before the local transaction that creates the account and its status history. A history write failure rolls back that transaction.
@@ -57,4 +58,4 @@ Set-Location core-banking-service
 
 These checks cover wire requests, error mapping, configuration validation, a real local HTTP read timeout, redirect rejection, ownership and transaction ordering. They do not require PostgreSQL or Kafka and do not establish end-to-end integration between deployed services.
 
-Account controllers and response DTOs remain for the following Account API step. JWT key/issuer/audience alignment across Gateway, Core and Customer and the Account gateway route remain for Step 7. Core's current security configuration is unchanged by this adapter implementation.
+[Step 5](account-api.md) adds Account controllers and response DTOs, mapping the account and currency metadata inside local transactions. JWT key/issuer/audience alignment across Gateway, Core and Customer and the Account gateway route remain for Step 7. Core's current security configuration is unchanged by this adapter implementation.

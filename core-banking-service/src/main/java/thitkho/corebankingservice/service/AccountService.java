@@ -1,7 +1,8 @@
 package thitkho.corebankingservice.service;
 
 import thitkho.corebankingservice.common.exception.BusinessException;
-import thitkho.corebankingservice.model.Account;
+import thitkho.corebankingservice.common.dto.account.AccountResponse;
+import thitkho.corebankingservice.common.dto.account.AccountBalanceResponse;
 import thitkho.corebankingservice.model.enums.ProductType;
 
 import java.util.UUID;
@@ -15,11 +16,18 @@ public interface AccountService {
      * @throws BusinessException with UNSUPPORTED_CURRENCY if the currency is not supported,
      *         or CUSTOMER_NOT_ELIGIBLE if the customer is missing or inactive
      */
-    Account openAccount(ProductType productType, String currency, String bearerToken);
+    AccountResponse openAccount(ProductType productType, String currency, String bearerToken);
 
     /**
      * Resolves the current customer and returns their customer account, including inactive accounts.
      * @throws BusinessException with ACCOUNT_NOT_FOUND if the account is absent or belongs to another customer
      */
-    Account getOwnedAccount(UUID accountId, String bearerToken);
+    AccountResponse getOwnedAccount(UUID accountId, String bearerToken);
+
+    /**
+     * Returns the verified owner's balance as an exact minor-unit string with currency metadata.
+     * @throws BusinessException with ACCOUNT_NOT_FOUND if the customer/account is absent,
+     *         the account belongs to another customer, or it is a system account
+     */
+    AccountBalanceResponse getOwnedAccountBalance(UUID accountId, String bearerToken);
 }

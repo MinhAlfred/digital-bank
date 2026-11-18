@@ -42,7 +42,7 @@ class CustomerClientConfigurationTest {
             CustomerServiceProperties properties = context.getBean(CustomerServiceProperties.class);
             assertThat(properties.baseUrl().toString()).isEqualTo("http://localhost:4001");
             assertThat(properties.connectTimeout()).isEqualTo(Duration.ofSeconds(2));
-            assertThat(properties.readTimeout()).isEqualTo(Duration.ofSeconds(3));
+            assertThat(properties.readTimeout()).isEqualTo(Duration.ofSeconds(30));
         });
     }
 

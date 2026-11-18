@@ -11,7 +11,11 @@ public enum ErrorCode {
     ACCESS_DENIED("AD01", HttpStatus.FORBIDDEN, "Access denied"),
     UPSTREAM_TIMEOUT("UT01", HttpStatus.GATEWAY_TIMEOUT, "Customer service timed out"),
     CUSTOMER_SERVICE_UNAVAILABLE("CSU01", HttpStatus.SERVICE_UNAVAILABLE, "Customer service is unavailable"),
-    INVALID_CUSTOMER_RESPONSE("ICR01", HttpStatus.BAD_GATEWAY, "Invalid customer service response");
+    INVALID_CUSTOMER_RESPONSE("ICR01", HttpStatus.BAD_GATEWAY, "Invalid customer service response"),
+    VALIDATION_ERROR("VE01", HttpStatus.BAD_REQUEST, "Validation failed"),
+    MALFORMED_REQUEST("MR01", HttpStatus.BAD_REQUEST, "Malformed request"),
+    DATA_CONFLICT("DC01", HttpStatus.CONFLICT, "The request conflicts with existing data"),
+    INTERNAL_ERROR("IE01", HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
 
     private final String code;
     private final HttpStatus status;
