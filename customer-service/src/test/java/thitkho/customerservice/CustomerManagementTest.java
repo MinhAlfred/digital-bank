@@ -65,6 +65,9 @@ class CustomerManagementTest {
         assertThat(createdBody).containsEntry("email", "a@example.com").containsEntry("status", "ACTIVE")
                 .containsEntry("fullName", "Nguyen Van A").containsEntry("phone", null);
         assertThat(createdBody.get("id")).isNotNull();
+        assertThat(createdBody.get("createdAt")).isNotNull();
+        assertThat(createdBody.get("updatedAt")).isNotNull();
+        assertThat(createdBody.get("updatedAt")).isEqualTo(createdBody.get("createdAt"));
         assertThat(customerRepository.findByAuthSubject("provider|Subject-A")).isPresent();
 
         MvcTestResult own = getCurrent("provider|Subject-A");

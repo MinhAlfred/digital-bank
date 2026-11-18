@@ -24,9 +24,7 @@ import thitkho.customerservice.mapper.CustomerMapper;
 import thitkho.customerservice.repository.CustomerRepository;
 import thitkho.customerservice.service.CustomerService;
 
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,7 +49,7 @@ class CustomerServiceImplTest {
     @BeforeEach
     void setUp() {
         customerService = new CustomerServiceImpl(customerRepository, Mappers.getMapper(CustomerMapper.class),
-                new TransactionTemplate(platformTransactionManager), Clock.fixed(NOW, ZoneOffset.UTC));
+                new TransactionTemplate(platformTransactionManager));
     }
 
     @Test
@@ -69,8 +67,8 @@ class CustomerServiceImplTest {
         assertThat(response.email()).isEqualTo("customer@example.com");
         assertThat(response.phone()).isNull();
         assertThat(response.status()).isEqualTo(CustomerStatus.ACTIVE);
-        assertThat(response.createdAt()).isEqualTo(NOW);
-        assertThat(response.updatedAt()).isEqualTo(NOW);
+        assertThat(response.createdAt()).isNull();
+        assertThat(response.updatedAt()).isNull();
         then(platformTransactionManager).should().commit(transactionStatus);
     }
 
@@ -134,7 +132,7 @@ class CustomerServiceImplTest {
     @ParameterizedTest
     @EnumSource(CustomerStatus.class)
     void getCurrent_eachStatus_returnsOwnProfile(CustomerStatus status) {
-        Customer customer = Customer.create(SUBJECT, "A", "a@example.com", null, NOW);
+        Customer customer = Customer.create(SUBJECT, "A", "a@example.com", null);
         ReflectionTestUtils.setField(customer, "status", status);
         given(customerRepository.findByAuthSubject(SUBJECT)).willReturn(Optional.of(customer));
 

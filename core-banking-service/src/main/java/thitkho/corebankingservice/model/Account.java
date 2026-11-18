@@ -2,17 +2,17 @@ package thitkho.corebankingservice.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import thitkho.corebankingservice.common.persistence.AuditableEntity;
 import thitkho.corebankingservice.model.enums.AccountStatus;
 import thitkho.corebankingservice.model.enums.AccountType;
 import thitkho.corebankingservice.model.enums.ProductType;
 
-import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "accounts")
 @Data
-public class Account {
+public class Account extends AuditableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -45,12 +45,6 @@ public class Account {
     @Version
     private long version;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
-
     @Column(name = "closed_at")
     private Instant closedAt;
 
@@ -66,7 +60,6 @@ public class Account {
         a.currency = currency;
         a.status = AccountStatus.ACTIVE;
         a.balance = 0;
-        a.createdAt = a.updatedAt = Instant.now();
         return a;
     }
 

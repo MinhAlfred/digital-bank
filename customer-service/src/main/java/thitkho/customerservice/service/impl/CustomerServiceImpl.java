@@ -14,7 +14,6 @@ import thitkho.customerservice.mapper.CustomerMapper;
 import thitkho.customerservice.repository.CustomerRepository;
 import thitkho.customerservice.service.CustomerService;
 
-import java.time.Clock;
 import java.util.Objects;
 
 @Service
@@ -22,14 +21,12 @@ public class CustomerServiceImpl implements CustomerService {
     private final CustomerRepository customerRepository;
     private final CustomerMapper customerMapper;
     private final TransactionTemplate transactionTemplate;
-    private final Clock clock;
 
     public CustomerServiceImpl(CustomerRepository customerRepository, CustomerMapper customerMapper,
-                               TransactionTemplate transactionTemplate, Clock clock) {
+                               TransactionTemplate transactionTemplate) {
         this.customerRepository = customerRepository;
         this.customerMapper = customerMapper;
         this.transactionTemplate = transactionTemplate;
-        this.clock = clock;
     }
 
     @Override
@@ -39,7 +36,7 @@ public class CustomerServiceImpl implements CustomerService {
         try {
             return Objects.requireNonNull(transactionTemplate.execute(status -> customerMapper.toResponse(
                     customerRepository.saveAndFlush(Customer.create(authenticatedSubject, request.fullName(),
-                            request.email(), request.phone(), clock.instant())))));
+                            request.email(), request.phone())))));
         } catch (DataIntegrityViolationException exception) {
             // The failed write transaction has rolled back before checking concurrent winners.
             rejectDuplicates(authenticatedSubject, request.email());

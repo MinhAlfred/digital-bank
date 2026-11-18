@@ -9,15 +9,15 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import thitkho.customerservice.common.persistence.AuditableEntity;
 import lombok.Getter;
 
-import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "customers")
 @Getter
-public class Customer {
+public class Customer extends AuditableEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -38,27 +38,19 @@ public class Customer {
     @Column(nullable = false, length = 20)
     private CustomerStatus status;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
-
     @Version
     private long version;
 
     protected Customer() {
     }
 
-    public static Customer create(String authSubject, String fullName, String email, String phone, Instant now) {
+    public static Customer create(String authSubject, String fullName, String email, String phone) {
         Customer customer = new Customer();
         customer.authSubject = authSubject;
         customer.fullName = fullName;
         customer.email = email;
         customer.phone = phone;
         customer.status = CustomerStatus.ACTIVE;
-        customer.createdAt = now;
-        customer.updatedAt = now;
         return customer;
     }
 }
