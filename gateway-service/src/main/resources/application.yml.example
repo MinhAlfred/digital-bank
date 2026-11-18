@@ -1,0 +1,21 @@
+spring:
+  config:
+    import: classpath:gateway-routes.yml
+  application:
+    name: api-gateway
+
+server:
+  port: 3000
+
+app:
+  security:
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET}
+      issuer: ${APP_SECURITY_JWT_ISSUER}
+      audience: ${APP_SECURITY_JWT_AUDIENCE}
+
+gateway:
+  internal-secret: ${GATEWAY_INTERNAL_SECRET}
+
+# Routes, destination URLs and timeouts are defined in gateway-routes.yml.
+# Preserve your public endpoint settings in local configuration.

@@ -6,6 +6,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import thitkho.customerservice.support.TestTokens;
 
 import java.time.Instant;
@@ -53,5 +54,23 @@ class SecurityConfigurationTest {
         String token = TestTokens.encode(TestTokens.claims("subject").build(), "different-test-key-32-bytes-minimum");
 
         assertThatThrownBy(() -> jwtDecoder.decode(token)).isInstanceOf(JwtException.class);
+    }
+
+    @Test
+    void decode_nonHs256_rejectsEvenWithMatchingSecret() {
+        String secret = "test-only-long-signing-key-for-algorithm-check-".repeat(2);
+        JwtDecoder restrictedJwtDecoder = new SecurityConfiguration().jwtDecoder(new JwtProperties(secret,
+                TestTokens.ISSUER, TestTokens.AUDIENCE));
+        String token = TestTokens.encode(TestTokens.claims("subject").build(), secret, MacAlgorithm.HS512);
+
+        assertThatThrownBy(() -> restrictedJwtDecoder.decode(token)).isInstanceOf(JwtException.class);
+    }
+
+    @Test
+    void decode_withinClockSkew_acceptsTokenDuringGracePeriod() {
+        String token = TestTokens.encode(TestTokens.claims("subject").issuedAt(Instant.now().minusSeconds(90))
+                .expiresAt(Instant.now().minusSeconds(30)).build(), TestTokens.SECRET);
+
+        assertThat(jwtDecoder.decode(token).getSubject()).isEqualTo("subject");
     }
 }

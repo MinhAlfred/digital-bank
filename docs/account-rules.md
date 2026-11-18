@@ -35,4 +35,4 @@ This selection ran successfully on PostgreSQL 15 using Testcontainers and the re
 
 `isActive()` is a state predicate, not transaction-flow enforcement. When deposits, withdrawals or transfers are introduced, those service/domain operations must check account eligibility and implement their own concurrency/idempotency rules and tests. No transaction or status-change endpoint exists in this step.
 
-Step 7 adds the Account gateway route, aligns JWT keys/issuer/audience across services and standardizes security-filter responses. Step 8 verifies the deployed multi-service flow. The current persistence tests stub Customer HTTP responses and do not establish end-to-end authentication across services.
+[Step 7](gateway-security.md) adds the Account gateway route, aligns JWT keys/issuer/audience across services and standardizes backend security-filter responses while preserving Gateway's existing error format. Step 8 verifies the deployed multi-service flow. The current persistence tests stub Customer HTTP responses and do not establish end-to-end authentication across services.

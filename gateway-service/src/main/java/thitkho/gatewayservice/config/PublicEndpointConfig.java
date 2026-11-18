@@ -9,15 +9,16 @@ import java.util.List;
 @ConfigurationProperties(prefix = "public")
 public class PublicEndpointConfig {
 
-    private List<String> endpoints;
+    private List<String> endpoints = List.of();
     public List<String> getEndpoints() {
         return endpoints;
     }
     public void setEndpoints(List<String> endpoints) {
-        this.endpoints = endpoints;
+        this.endpoints = List.copyOf(endpoints);
     }
     public boolean isPublic(String path) {
         return endpoints.stream()
-                .anyMatch(endpoint -> path.equals(endpoint) || path.startsWith(endpoint));
+                .anyMatch(endpoint -> path.equals(endpoint)
+                        || path.startsWith(endpoint.endsWith("/") ? endpoint : endpoint + "/"));
     }
 }

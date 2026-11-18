@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import thitkho.corebankingservice.common.dto.account.AccountBalanceResponse;
@@ -26,6 +27,7 @@ import thitkho.corebankingservice.model.enums.AccountStatus;
 import thitkho.corebankingservice.model.enums.AccountType;
 import thitkho.corebankingservice.model.enums.ProductType;
 import thitkho.corebankingservice.service.AccountService;
+import thitkho.corebankingservice.security.handler.SecurityProblemHandler;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -39,7 +41,9 @@ import static org.mockito.BDDMockito.then;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
 @WebMvcTest(AccountController.class)
-@Import({SecurityConfig.class, ApplicationConfiguration.class, ProblemDetailFactory.class, GlobalExceptionHandler.class})
+@ActiveProfiles("test")
+@Import({SecurityConfig.class, ApplicationConfiguration.class, ProblemDetailFactory.class, GlobalExceptionHandler.class,
+        SecurityProblemHandler.class})
 class AccountControllerTest {
     private final UUID accountId = UUID.fromString("20000000-0000-0000-0000-000000000001");
     private final UUID customerId = UUID.fromString("10000000-0000-0000-0000-000000000001");
@@ -157,21 +161,22 @@ class AccountControllerTest {
     }
 
     @Test
-    void allEndpoints_missingToken_rejectEvenWithForgedIdentityHeaders() {
-        assertThat(mockMvcTester.post().uri("/api/accounts").header("X-User-Id", customerId.toString())
-                .header("X-Internal-Secret", "forged").contentType(MediaType.APPLICATION_JSON).content("{}").exchange())
-                .hasStatus(401);
-        assertThat(mockMvcTester.get().uri("/api/accounts/" + accountId).exchange()).hasStatus(401);
-        assertThat(mockMvcTester.get().uri("/api/accounts/" + accountId + "/balance").exchange()).hasStatus(401);
+    void allEndpoints_missingToken_rejectEvenWithForgedIdentityHeaders() throws Exception {
+        MvcTestResult result = mockMvcTester.post().uri("/api/accounts").header("X-User-Id", customerId.toString())
+                .header("X-Internal-Secret", "forged").contentType(MediaType.APPLICATION_JSON).content("{}").exchange();
+        assertError(result, 401, "UNAUTHENTICATED");
+        assertThat(result.getResponse().getHeader(HttpHeaders.WWW_AUTHENTICATE)).isEqualTo("Bearer");
+        assertError(mockMvcTester.get().uri("/api/accounts/" + accountId).exchange(), 401, "UNAUTHENTICATED");
+        assertError(mockMvcTester.get().uri("/api/accounts/" + accountId + "/balance").exchange(), 401, "UNAUTHENTICATED");
         then(accountService).shouldHaveNoInteractions();
     }
 
     @Test
-    void getAccount_invalidToken_rejectsBeforeService() {
+    void getAccount_invalidToken_rejectsBeforeService() throws Exception {
         given(jwtDecoder.decode("invalid-token")).willThrow(new BadJwtException("Invalid token"));
 
-        assertThat(mockMvcTester.get().uri("/api/accounts/" + accountId)
-                .header(HttpHeaders.AUTHORIZATION, "Bearer invalid-token").exchange()).hasStatus(401);
+        assertError(mockMvcTester.get().uri("/api/accounts/" + accountId)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer invalid-token").exchange(), 401, "UNAUTHENTICATED");
         then(accountService).shouldHaveNoInteractions();
     }
 

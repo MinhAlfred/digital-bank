@@ -64,4 +64,4 @@ With Docker Engine running, execute the PostgreSQL tests:
 
 These use PostgreSQL 15, real Flyway migrations, Spring-managed Testcontainers, and real local transactions. They check persisted timestamps/history, create → read, exact large balances, and rollback of the account when a real history constraint fails. They do not make real calls to Customer; the lookup is stubbed and asserts it executes outside the database transaction.
 
-[Step 6](account-rules.md) verifies account states, ownership and database constraints, including the PostgreSQL checks that were pending after Step 5. Gateway routes, JWT issuer/audience alignment and consistent security-filter errors remain Step 7; full deployed end-to-end verification remains Step 8.
+[Step 6](account-rules.md) verifies account states, ownership and database constraints, including the PostgreSQL checks that were pending after Step 5. [Step 7](gateway-security.md) adds Gateway routes and aligns JWT validation and backend security errors; full deployed end-to-end verification remains Step 8.

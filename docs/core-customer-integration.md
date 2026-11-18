@@ -58,4 +58,4 @@ Set-Location core-banking-service
 
 These checks cover wire requests, error mapping, configuration validation, a real local HTTP read timeout, redirect rejection, ownership and transaction ordering. They do not require PostgreSQL or Kafka and do not establish end-to-end integration between deployed services.
 
-[Step 5](account-api.md) adds Account controllers and response DTOs, mapping the account and currency metadata inside local transactions. JWT key/issuer/audience alignment across Gateway, Core and Customer and the Account gateway route remain for Step 7. Core's current security configuration is unchanged by this adapter implementation.
+[Step 5](account-api.md) adds Account controllers and response DTOs, mapping the account and currency metadata inside local transactions. [Step 7](gateway-security.md) aligns JWT validation across Gateway, Core and Customer and adds the Account gateway route; follow its configuration migration before running the services together.

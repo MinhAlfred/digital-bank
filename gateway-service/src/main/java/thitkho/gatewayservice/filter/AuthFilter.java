@@ -1,119 +1,96 @@
 package thitkho.gatewayservice.filter;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.OrderedGatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
-import org.springframework.core.io.buffer.DataBuffer;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
-import reactor.core.publisher.Mono;
+import thitkho.gatewayservice.common.constant.GatewaySecurityConstants;
+import thitkho.gatewayservice.common.dto.AuthenticatedUser;
+import thitkho.gatewayservice.config.GatewayProperties;
 import thitkho.gatewayservice.config.PublicEndpointConfig;
 import thitkho.gatewayservice.util.GatewayResponseUtil;
 import thitkho.gatewayservice.util.JwtUtil;
 
-import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 @Component
-@Slf4j
 public class AuthFilter extends AbstractGatewayFilterFactory<AuthFilter.Config> {
-
     private final PublicEndpointConfig publicEndpointConfig;
-
-    @Value("${gateway.internal-secret}")
-    private String internalSecret;
-
+    private final GatewayProperties gatewayProperties;
     private final JwtUtil jwtUtil;
     private final GatewayResponseUtil gatewayResponseUtil;
 
-    public AuthFilter(PublicEndpointConfig publicEndpointConfig, JwtUtil jwtUtil, GatewayResponseUtil gatewayResponseUtil) {
+    public AuthFilter(PublicEndpointConfig publicEndpointConfig, GatewayProperties gatewayProperties,
+                      JwtUtil jwtUtil, GatewayResponseUtil gatewayResponseUtil) {
         super(Config.class);
         this.publicEndpointConfig = publicEndpointConfig;
+        this.gatewayProperties = gatewayProperties;
         this.jwtUtil = jwtUtil;
         this.gatewayResponseUtil = gatewayResponseUtil;
     }
 
-    // 2. Class Config (có thể để trống nếu không cần tham số từ YAML)
     public static class Config {
+        private boolean authenticationRequired;
+
+        public Config() {
+        }
+
+        public Config(boolean authenticationRequired) {
+            this.authenticationRequired = authenticationRequired;
+        }
+
+        public boolean isAuthenticationRequired() {
+            return authenticationRequired;
+        }
+
+        public void setAuthenticationRequired(boolean authenticationRequired) {
+            this.authenticationRequired = authenticationRequired;
+        }
     }
 
-    // 3. Toàn bộ logic filter nằm ở đây
     @Override
     public GatewayFilter apply(Config config) {
-        // Sử dụng OrderedGatewayFilter để giữ nguyên logic getOrder() = -1 của bạn
         return new OrderedGatewayFilter((exchange, chain) -> {
-            String path = exchange.getRequest().getPath().value();
-            String method = exchange.getRequest().getMethod().name();
+            ServerHttpRequest cleanedRequest = exchange.getRequest().mutate().headers(headers -> {
+                headers.remove(GatewaySecurityConstants.INTERNAL_SECRET_HEADER);
+                headers.remove(GatewaySecurityConstants.USER_ID_HEADER);
+                headers.remove(GatewaySecurityConstants.USER_ROLE_HEADER);
+            }).build();
+            ServerWebExchange cleanedExchange = exchange.mutate().request(cleanedRequest).build();
 
-            log.debug("========== AuthFilter START ==========");
-            log.debug("Incoming request: {} {}", method, path);
-            log.debug("Original headers: {}", exchange.getRequest().getHeaders());
-
-            // --- LOGIC CŨ CỦA BẠN ---
-            ServerHttpRequest cleanedRequest = exchange.getRequest()
-                    .mutate()
-                    .headers(headers -> {
-                        headers.remove("X-Internal-Secret");
-                        headers.remove("X-User-Id");
-                        headers.remove("X-User-Role");
-                    })
-                    .build();
-
-            ServerWebExchange mutatedExchange = exchange.mutate().request(cleanedRequest).build();
-            log.debug("Headers after cleaning: {}", mutatedExchange.getRequest().getHeaders());
-
-            // 1. Bỏ qua public endpoints
-            if (publicEndpointConfig.isPublic(path)) {
-                log.info("✅ Public endpoint detected: {} - Skipping JWT validation", path);
-                ServerHttpRequest publicRequest = mutatedExchange.getRequest()
-                        .mutate()
-                        .header("X-Internal-Secret", internalSecret)
-                        .build();
-                log.debug("Added X-Internal-Secret for public endpoint");
-                return chain.filter(mutatedExchange.mutate().request(publicRequest).build());
+            if (!config.isAuthenticationRequired() && publicEndpointConfig.isPublic(cleanedRequest.getPath().value())) {
+                ServerHttpRequest publicRequest = cleanedRequest.mutate()
+                        .header(GatewaySecurityConstants.INTERNAL_SECRET_HEADER, gatewayProperties.internalSecret()).build();
+                return chain.filter(cleanedExchange.mutate().request(publicRequest).build());
             }
 
-            log.debug("Protected endpoint: {} - Validating JWT", path);
-
-            // 2. Lấy token
-            String token = jwtUtil.extractToken(mutatedExchange.getRequest());
-            if (token == null) {
-                log.warn("❌ Missing token for protected endpoint: {}", path);
-                return gatewayResponseUtil.onError(mutatedExchange, HttpStatus.UNAUTHORIZED, "Missing token");
+            Optional<String> token = jwtUtil.extractToken(cleanedRequest);
+            if (token.isEmpty()) {
+                return gatewayResponseUtil.onError(cleanedExchange, HttpStatus.UNAUTHORIZED, "Missing token");
+            }
+            Optional<AuthenticatedUser> user = jwtUtil.authenticate(token.get());
+            if (user.isEmpty()) {
+                return gatewayResponseUtil.onError(cleanedExchange, HttpStatus.UNAUTHORIZED, "Invalid token");
             }
 
-            log.debug("Token extracted: {}...", token.substring(0, Math.min(20, token.length())));
+            ServerHttpRequest forwardedRequest = cleanedRequest.mutate().headers(headers -> {
+                // These compatibility headers never replace backend JWT validation or ownership checks.
+                if (isSafeHeaderValue(user.get().subject())) {
+                    headers.set(GatewaySecurityConstants.USER_ID_HEADER, user.get().subject());
+                }
+                if (isSafeHeaderValue(user.get().role())) {
+                    headers.set(GatewaySecurityConstants.USER_ROLE_HEADER, user.get().role());
+                }
+                headers.set(GatewaySecurityConstants.INTERNAL_SECRET_HEADER, gatewayProperties.internalSecret());
+            }).build();
+            return chain.filter(cleanedExchange.mutate().request(forwardedRequest).build());
+        }, -1);
+    }
 
-            // 3. Validate token
-            if (!jwtUtil.isValid(token)) {
-                log.warn("❌ Invalid token for path: {}", path);
-                return gatewayResponseUtil.onError(mutatedExchange, HttpStatus.UNAUTHORIZED, "Invalid token");
-            }
-
-            log.debug("✅ Token is valid");
-
-            // 4. Extract info
-            String userId = jwtUtil.extractUserId(token);
-            String role   = jwtUtil.extractRole(token);
-
-            log.info("✅ Authenticated: userId={}, role={}, path={}", userId, role, path);
-
-            ServerHttpRequest finalRequest = mutatedExchange.getRequest()
-                    .mutate()
-                    .header("X-User-Id", userId)
-                    .header("X-User-Role", role)
-                    .header("X-Internal-Secret", internalSecret)
-                    .build();
-
-            log.debug("Final headers forwarded to service: X-User-Id={}, X-User-Role={}", userId, role);
-            log.debug("========== AuthFilter END ==========");
-
-            return chain.filter(mutatedExchange.mutate().request(finalRequest).build());
-        }, -1); // Order -1 ở đây
+    private boolean isSafeHeaderValue(String value) {
+        return value != null && value.chars().noneMatch(Character::isISOControl);
     }
 }

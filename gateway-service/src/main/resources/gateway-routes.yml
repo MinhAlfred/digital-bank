@@ -1,0 +1,67 @@
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: customer-service
+              order: -100
+              uri: lb://customer-service
+              predicates:
+                - Path=/api/customers,/api/customers/**
+              filters:
+                - name: AuthFilter
+                  args:
+                    authenticationRequired: true
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 35000
+
+            - id: core-banking-service
+              order: -100
+              uri: lb://core-banking-service
+              predicates:
+                - Path=/api/accounts,/api/accounts/**,/api/core/**
+              filters:
+                - name: AuthFilter
+                  args:
+                    authenticationRequired: true
+              metadata:
+                connect-timeout: 2000
+                response-timeout: 35000
+
+            - id: notification-service
+              uri: lb://notification-service
+              predicates:
+                - Path=/api/notifications/**
+              filters:
+                - name: AuthFilter
+
+            - id: fraud-detection-service
+              uri: lb://fraud-detection-service
+              predicates:
+                - Path=/api/fraud/**
+              filters:
+                - name: AuthFilter
+
+            - id: analysis-service
+              uri: lb://analysis-service
+              predicates:
+                - Path=/api/analysis/**
+              filters:
+                - name: AuthFilter
+
+    discovery:
+      client:
+        simple:
+          instances:
+            customer-service:
+              - uri: ${CUSTOMER_SERVICE_URI:http://localhost:4001}
+            core-banking-service:
+              - uri: ${CORE_BANKING_SERVICE_URI:http://localhost:4000}
+            notification-service:
+              - uri: ${NOTIFICATION_SERVICE_URI:http://localhost:4002}
+            fraud-detection-service:
+              - uri: ${FRAUD_DETECTION_SERVICE_URI:http://localhost:4003}
+            analysis-service:
+              - uri: ${ANALYSIS_SERVICE_URI:http://localhost:4004}

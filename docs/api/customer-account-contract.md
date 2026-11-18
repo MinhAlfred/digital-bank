@@ -189,8 +189,8 @@ Giữ business `ProblemDetail` của Core: `type`, `title`, `status`, `detail`, 
 | Customer | `CUSTOMER_EMAIL_ALREADY_EXISTS` | `CEA01` | 409 | Email đã có hồ sơ khác, gồm xung đột đồng thời | Đã triển khai bước 3 |
 | Mỗi backend | `VALIDATION_ERROR` | `VE01` | 400 | Thiếu field bắt buộc, ràng buộc Bean Validation | Customer đã có; Core đã có bước 5 |
 | Mỗi backend | `MALFORMED_REQUEST` | `MR01` | 400 | JSON sai, sai kiểu, enum/UUID không parse được, field không được phép | Customer đã có; Core đã có bước 5 |
-| Mỗi backend | `UNAUTHENTICATED` | `UA01` | 401 | Thiếu/token sai/hết hạn/subject không hợp lệ | Customer đã có; Core adapter đã có bước 4, security handler bước 7 |
-| Mỗi backend | `ACCESS_DENIED` | `AD01` | 403 | Đã xác thực nhưng thiếu quyền endpoint; không dùng cho Account khác chủ | Customer đã có; Core adapter đã có bước 4, security handler bước 7 |
+| Mỗi backend | `UNAUTHENTICATED` | `UA01` | 401 | Thiếu/token sai/hết hạn/subject không hợp lệ | Customer đã có; Core security handler đã có bước 7 |
+| Mỗi backend | `ACCESS_DENIED` | `AD01` | 403 | Đã xác thực nhưng thiếu quyền endpoint; không dùng cho Account khác chủ | Customer đã có; Core security handler đã có bước 7 |
 | Mỗi backend | `DATA_CONFLICT` | `DC01` | 409 | Lỗi toàn vẹn dữ liệu; Customer phân biệt trùng subject/email trước khi dùng lỗi chung | Customer bước 3; Core bước 5 |
 | Mỗi backend | `INTERNAL_ERROR` | `IE01` | 500 | Lỗi không mong đợi, nội dung chung | Customer bước 3; Core bước 5 |
 | Core | `UPSTREAM_TIMEOUT` | `UT01` | 504 | Chờ Customer quá thời hạn | Đã triển khai bước 4 |
@@ -203,7 +203,7 @@ Validation và lỗi binding mới dùng `title: "Invalid Request Data"`, cùng 
 
 Giữ mapping `IllegalArgumentException` hiện có của Core: `400 INVALID_ARGUMENT`, title `Invalid Request Data`, không tự thêm timestamp hoặc đổi format cho handler đó. Lỗi validation/binding mới có handler tương ứng, không gom lỗi lập trình thành lỗi đầu vào. Không thay cách xử lý lỗi DB/timeout đã có chỉ để đổi loại business exception; bảng upstream định nghĩa hành vi của adapter bước 4.
 
-Gateway hiện có lỗi riêng dạng `{"status":401,"message":"Missing token"}` với `application/json`. Bước 2 không đổi format này. Client phải dựa vào HTTP status cho lỗi bị chặn tại Gateway; bảng ProblemDetail nói về backend. Đồng bộ khóa/issuer/audience và route ở bước 7; việc đổi response Gateway cần phạm vi riêng, không ngầm coi đã thống nhất.
+Gateway có lỗi riêng dạng `{"status":401,"message":"Missing token"}` với `application/json`; bước 7 giữ nguyên format này. Client phải dựa vào HTTP status cho lỗi bị chặn tại Gateway; bảng ProblemDetail nói về backend. [Bước 7](../gateway-security.md) đã đồng bộ hợp đồng key/issuer/audience và thêm route; việc đổi response Gateway cần phạm vi riêng, không ngầm coi đã thống nhất.
 
 ## 7. Hợp đồng adapter Customer và lỗi từng phần
 
@@ -245,4 +245,4 @@ Các response Account/số dư cần cả giá trị `long` và metadata currenc
 | Adapter | 404/401/403/5xx/connect/timeout/response lỗi theo bảng; không tiếp tục khi chưa xác minh Customer |
 | Error contract | Giữ `ANF01`/`CNE01`/`UC01`, status, message hiện có, trường errorCode/timestamp và tính duy nhất của mã ngắn |
 
-Adapter Core mặc định trỏ Customer cổng 4001; local config cũ dùng 8081 cần đổi theo hướng dẫn tích hợp. Gateway chưa route `/api/accounts/**`; cấu hình JWT Gateway/Core/Customer cần được đồng bộ ở bước 7. Customer đã có resource-server security yêu cầu key/issuer/audience từ môi trường. Tài liệu này không chứng minh toàn hệ thống đã chạy end-to-end và không thay thế kiểm thử ở bước 8.
+Adapter Core mặc định trỏ Customer cổng 4001; local config cũ dùng 8081 cần đổi theo hướng dẫn tích hợp. Gateway đã route `/api/accounts` và `/api/accounts/**`; cả Gateway/Core/Customer dùng `app.security.jwt` với key UTF-8 thô, issuer và audience theo hướng dẫn bước 7. Cần cập nhật cấu hình local và bên cấp token cùng nhau. Tài liệu này không chứng minh toàn hệ thống đã chạy end-to-end và không thay thế kiểm thử ở bước 8.

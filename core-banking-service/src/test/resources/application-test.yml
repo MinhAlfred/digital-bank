@@ -1,0 +1,12 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+app:
+  security:
+    jwt:
+      secret: test-only-bank-key-32-bytes-minimum
+      issuer: https://issuer.example.test
+      audience: digital-bank-test

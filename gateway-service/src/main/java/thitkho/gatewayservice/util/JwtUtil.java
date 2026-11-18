@@ -1,81 +1,65 @@
 package thitkho.gatewayservice.util;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import thitkho.gatewayservice.common.constant.GatewaySecurityConstants;
+import thitkho.gatewayservice.common.dto.AuthenticatedUser;
+import thitkho.gatewayservice.config.JwtProperties;
 
-import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
 
 @Component
-@Slf4j
 public class JwtUtil {
+    private final JwtParser jwtParser;
 
-    @Value("${jwt.secret}")
-    private String secret;
-
-    private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
+    public JwtUtil(JwtProperties jwtProperties, Clock clock) {
+        this.jwtParser = Jwts.parser()
+                .verifyWith(new SecretKeySpec(jwtProperties.secret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"))
+                .requireIssuer(jwtProperties.issuer())
+                .requireAudience(jwtProperties.audience())
+                .clock(() -> Date.from(clock.instant()))
+                .clockSkewSeconds(GatewaySecurityConstants.CLOCK_SKEW_SECONDS)
+                .sig().clear().add(Jwts.SIG.HS256).and()
+                .build();
     }
 
-    public String extractToken(ServerHttpRequest request) {
-        String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            return authHeader.substring(7);
+    public Optional<String> extractToken(ServerHttpRequest request) {
+        List<String> authorization = request.getHeaders().get(HttpHeaders.AUTHORIZATION);
+        if (authorization == null || authorization.size() != 1) {
+            return Optional.empty();
         }
-        return request.getQueryParams().getFirst("token");
+        String header = authorization.getFirst();
+        if (!header.regionMatches(true, 0, GatewaySecurityConstants.BEARER_PREFIX, 0,
+                GatewaySecurityConstants.BEARER_PREFIX.length())) {
+            return Optional.empty();
+        }
+        String token = header.substring(GatewaySecurityConstants.BEARER_PREFIX.length());
+        return StringUtils.hasText(token) ? Optional.of(token) : Optional.empty();
     }
 
-    public Claims extractClaims(String token) {
+    public Optional<AuthenticatedUser> authenticate(String token) {
         try {
-            Claims claims = parseClaims(token).getPayload();
-            log.debug("Successfully extracted claims from token. Subject: {}", claims.getSubject());
-            return claims;
-        } catch (JwtException e) {
-            log.error("Failed to extract claims from token: {}", e.getMessage());
-            throw e;
+            Claims claims = jwtParser.parseSignedClaims(token).getPayload();
+            String subject = claims.getSubject();
+            if (!StringUtils.hasText(subject) || subject.length() > GatewaySecurityConstants.MAX_SUBJECT_LENGTH
+                    || claims.getExpiration() == null) {
+                return Optional.empty();
+            }
+            Object role = claims.get("role");
+            return Optional.of(new AuthenticatedUser(subject, role instanceof String value ? value : null));
+        } catch (JwtException | IllegalArgumentException exception) {
+            return Optional.empty();
         }
-    }
-
-    private Jws<Claims> parseClaims(String token) {
-        try {
-            return Jwts.parser()
-                    .verifyWith(getSigningKey())
-                    .build()
-                    .parseSignedClaims(token);
-        } catch (JwtException e) {
-            log.error("Failed to parse JWT token: {}", e.getMessage());
-            throw e;
-        }
-    }
-
-    public boolean isValid(String token) {
-        try {
-            extractClaims(token);
-            log.debug("Token validation successful");
-            return true;
-        } catch (JwtException | IllegalArgumentException e) {
-            log.warn("Token validation failed: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    public String extractUserId(String token) {
-        String userId = extractClaims(token).getSubject();
-        log.debug("Extracted userId: {}", userId);
-        return userId;
-    }
-
-    public String extractRole(String token) {
-        String role = extractClaims(token).get("role", String.class);
-        log.debug("Extracted role: {}", role);
-        return role;
     }
 }

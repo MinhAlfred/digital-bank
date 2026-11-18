@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: core-banking-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/core_banking_db}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+server:
+  port: 4000
+
+app:
+  security:
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET}
+      issuer: ${APP_SECURITY_JWT_ISSUER}
+      audience: ${APP_SECURITY_JWT_AUDIENCE}
+  customer-service:
+    base-url: ${APP_CUSTOMER_SERVICE_BASE_URL:http://localhost:4001}
+    connect-timeout: 2s
+    read-timeout: 30s

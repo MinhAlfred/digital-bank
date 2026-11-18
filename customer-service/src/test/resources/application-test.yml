@@ -7,7 +7,7 @@ spring:
 app:
   security:
     jwt:
-      secret: test-only-customer-key-32-bytes-minimum
+      secret: test-only-bank-key-32-bytes-minimum
       issuer: https://issuer.example.test
       audience: digital-bank-test
 

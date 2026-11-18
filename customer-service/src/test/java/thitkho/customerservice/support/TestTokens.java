@@ -12,7 +12,7 @@ import java.time.Instant;
 import java.util.List;
 
 public final class TestTokens {
-    public static final String SECRET = "test-only-customer-key-32-bytes-minimum";
+    public static final String SECRET = "test-only-bank-key-32-bytes-minimum";
     public static final String ISSUER = "https://issuer.example.test";
     public static final String AUDIENCE = "digital-bank-test";
 
@@ -29,8 +29,12 @@ public final class TestTokens {
     }
 
     public static String encode(JwtClaimsSet jwtClaimsSet, String secret) {
+        return encode(jwtClaimsSet, secret, MacAlgorithm.HS256);
+    }
+
+    public static String encode(JwtClaimsSet jwtClaimsSet, String secret, MacAlgorithm algorithm) {
         NimbusJwtEncoder jwtEncoder = new NimbusJwtEncoder(new ImmutableSecret<>(secret.getBytes(StandardCharsets.UTF_8)));
         return jwtEncoder.encode(JwtEncoderParameters.from(
-                JwsHeader.with(MacAlgorithm.HS256).build(), jwtClaimsSet)).getTokenValue();
+                JwsHeader.with(algorithm).build(), jwtClaimsSet)).getTokenValue();
     }
 }
