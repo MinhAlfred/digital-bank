@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 
@@ -59,5 +60,17 @@ class GlobalExceptionHandlerTest {
         assertThat(problem.getDetail()).isEqualTo("Invalid product type");
         assertThat(problem.getProperties()).containsOnlyKeys("errorCode")
                 .containsEntry("errorCode", "INVALID_ARGUMENT");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ErrorCode.class, names = {"UNAUTHENTICATED", "ACCESS_DENIED", "UPSTREAM_TIMEOUT",
+            "CUSTOMER_SERVICE_UNAVAILABLE", "INVALID_CUSTOMER_RESPONSE"})
+    void handleBusinessException_customerIntegrationErrors_preservesProblemDetailContract(ErrorCode errorCode) {
+        ProblemDetail problem = globalExceptionHandler.handleBusinessException(new BusinessException(errorCode));
+
+        assertThat(problem.getStatus()).isEqualTo(errorCode.getStatus().value());
+        assertThat(problem.getDetail()).isEqualTo(errorCode.getMessage());
+        assertThat(problem.getProperties()).containsOnlyKeys("errorCode", "timestamp")
+                .containsEntry("errorCode", errorCode.name());
     }
 }

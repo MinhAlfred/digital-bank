@@ -6,7 +6,12 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
     ACCOUNT_NOT_FOUND("ANF01", HttpStatus.NOT_FOUND, "Account not found"),
     CUSTOMER_NOT_ELIGIBLE("CNE01", HttpStatus.CONFLICT, "Customer is not active"),
-    UNSUPPORTED_CURRENCY("UC01", HttpStatus.BAD_REQUEST, "Unsupported currency");
+    UNSUPPORTED_CURRENCY("UC01", HttpStatus.BAD_REQUEST, "Unsupported currency"),
+    UNAUTHENTICATED("UA01", HttpStatus.UNAUTHORIZED, "Authentication required"),
+    ACCESS_DENIED("AD01", HttpStatus.FORBIDDEN, "Access denied"),
+    UPSTREAM_TIMEOUT("UT01", HttpStatus.GATEWAY_TIMEOUT, "Customer service timed out"),
+    CUSTOMER_SERVICE_UNAVAILABLE("CSU01", HttpStatus.SERVICE_UNAVAILABLE, "Customer service is unavailable"),
+    INVALID_CUSTOMER_RESPONSE("ICR01", HttpStatus.BAD_GATEWAY, "Invalid customer service response");
 
     private final String code;
     private final HttpStatus status;

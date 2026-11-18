@@ -3,14 +3,15 @@ package thitkho.corebankingservice.integration.customer;
 import thitkho.corebankingservice.common.dto.external.customer.CustomerInfo;
 
 import java.util.Optional;
-import java.util.UUID;
 
-/** Customer lookup port. The HTTP adapter is implemented with the customer integration. */
+/** Customer lookup using the authenticated caller's credential. */
 public interface CustomerGateway {
 
     /**
-     * Looks up a customer using the supplied credential.
+     * Looks up the current customer using a validated raw access token (without the Bearer prefix).
      * @return customer information, or empty when the customer does not exist
+     * @throws thitkho.corebankingservice.common.exception.BusinessException when authentication,
+     *         availability, timeout or response validation fails
      */
-    Optional<CustomerInfo> findById(UUID customerId, String bearerToken);
+    Optional<CustomerInfo> findCurrentCustomer(String bearerToken);
 }

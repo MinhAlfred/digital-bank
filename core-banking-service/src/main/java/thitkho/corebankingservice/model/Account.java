@@ -7,6 +7,7 @@ import thitkho.corebankingservice.model.enums.AccountStatus;
 import thitkho.corebankingservice.model.enums.AccountType;
 import thitkho.corebankingservice.model.enums.ProductType;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity

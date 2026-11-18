@@ -1,7 +1,6 @@
 package thitkho.corebankingservice.service.impl;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import thitkho.corebankingservice.common.dto.external.customer.CustomerInfo;
 import thitkho.corebankingservice.common.exception.BusinessException;
@@ -10,6 +9,7 @@ import thitkho.corebankingservice.generator.AccountNumberGenerator;
 import thitkho.corebankingservice.integration.customer.CustomerGateway;
 import thitkho.corebankingservice.model.Account;
 import thitkho.corebankingservice.model.AccountStatusHistory;
+import thitkho.corebankingservice.model.enums.AccountType;
 import thitkho.corebankingservice.model.enums.ProductType;
 import thitkho.corebankingservice.repository.AccountRepository;
 import thitkho.corebankingservice.repository.AccountStatusHistoryRepository;
@@ -39,14 +39,14 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public Account openAccount(UUID customerId, ProductType productType,
+    public Account openAccount(ProductType productType,
                                String currency, String bearerToken) {
         if (!currencyRepository.existsById(currency)) {
             throw new BusinessException(ErrorCode.UNSUPPORTED_CURRENCY, "Unsupported currency: " + currency);
         }
 
         // Complete remote validation before starting the local write transaction.
-        CustomerInfo customer = customerGateway.findById(customerId, bearerToken)
+        CustomerInfo customer = customerGateway.findCurrentCustomer(bearerToken)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_NOT_ELIGIBLE, "Customer not found"));
         if (!"ACTIVE".equals(customer.status())) {
             throw new BusinessException(ErrorCode.CUSTOMER_NOT_ELIGIBLE);
@@ -54,17 +54,19 @@ public class AccountServiceImpl implements AccountService {
 
         return transactionTemplate.execute(status -> {
             Account account = accountRepository.save(Account.openCustomerAccount(
-                    accountNumberGenerator.next(), customerId, productType, currency));
-            accountStatusHistoryRepository.save(AccountStatusHistory.opened(account.getId(), customerId.toString()));
+                    accountNumberGenerator.next(), customer.id(), productType, currency));
+            accountStatusHistoryRepository.save(AccountStatusHistory.opened(account.getId(), customer.id().toString()));
             return account;
         });
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public Account getOwnedAccount(UUID accountId, UUID customerId) {
+    public Account getOwnedAccount(UUID accountId, String bearerToken) {
+        CustomerInfo customer = customerGateway.findCurrentCustomer(bearerToken)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACCOUNT_NOT_FOUND));
         return accountRepository.findById(accountId)
-                .filter(account -> customerId.equals(account.getCustomerId()))
+                .filter(account -> account.getAccountType() == AccountType.CUSTOMER)
+                .filter(account -> customer.id().equals(account.getCustomerId()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.ACCOUNT_NOT_FOUND));
     }
 }

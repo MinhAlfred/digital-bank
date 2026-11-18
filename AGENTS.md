@@ -58,6 +58,7 @@ This banking learning project contains six independent Maven services, with no r
 ## Architecture and Packages
 
 - Each service owns its data, migrations and DTOs. Never use another service's repositories/entities or directly query tables it owns.
+- Declare application static constants in dedicated classes under each service's `common.constant` package, with immutable values and private constructors. Do not declare static fields in application components. Keep environment-specific settings in configuration properties.
 - Organize new features within the service's root package, using `web`, `service`, `service.impl`, `domain`, `repository`, `mapper` and `integration` as needed. Do not create empty packages just to match a template.
 - DTO records belong in `<root>.common.dto.<feature>`; generic wrappers in `<root>.common.dto`; external wire DTOs in `<root>.common.dto.external.<provider>`. Each service owns its `common` package; do not introduce a system-wide business DTO/entity jar.
 - Public feature services use `XxxService` interfaces and `service.impl.XxxServiceImpl` implementations. Controllers depend on interfaces; services own business logic and transactions; repositories own persistence. Never expose entities through APIs.

@@ -79,4 +79,4 @@ Yêu cầu JDK 25 và Docker Engine đang chạy. Từ `customer-service`:
 
 Test dùng key/issuer/audience riêng trong `application-test.yml`, không dùng key thật. Có unit test service, test decoder bằng JWT ký thật, MVC slice test, test tích hợp với PostgreSQL 15 và context test PostgreSQL/Kafka. Test tích hợp kiểm tra tạo → đọc, cách ly subject, constraint email không phân biệt hoa/thường và hai request tạo đồng thời.
 
-Bước 3 chưa triển khai HTTP adapter của Core hoặc route Account; tiếp tục các phần đó sau khi được xác nhận sang bước 4/7.
+Bước 4 đã triển khai [HTTP adapter của Core](core-customer-integration.md) để resolve Customer qua `/me`. Route Account và đồng bộ cấu hình JWT giữa các service vẫn thuộc bước 7.
