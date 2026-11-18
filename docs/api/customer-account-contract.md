@@ -160,7 +160,7 @@ Cùng quy tắc UUID và ownership. Response `200`, `AccountBalanceResponse`:
 }
 ```
 
-Account có `ACTIVE`, `FROZEN`, `CLOSED`. Đọc thông tin/số dư không phải giao dịch. Mọi thao tác giao dịch sau này phải kiểm tra Account `ACTIVE` tại domain/service; bước 6 kiểm thử quy tắc, còn chặn trong luồng giao dịch thực tế được nghiệm thu khi có luồng đó. Không thêm endpoint giao dịch hoặc thay đổi trạng thái trong bước 2.
+Account có `ACTIVE`, `FROZEN`, `CLOSED`. Đọc thông tin/số dư không phải giao dịch. Mọi thao tác giao dịch sau này phải kiểm tra Account `ACTIVE` tại domain/service; [bước 6](../account-rules.md) đã kiểm thử state predicate, quyền đọc và constraint PostgreSQL, còn chặn trong luồng giao dịch thực tế được nghiệm thu khi có luồng đó. Không thêm endpoint giao dịch hoặc thay đổi trạng thái trong bước 2.
 
 ## 6. Hợp đồng lỗi
 

@@ -2,6 +2,9 @@ package thitkho.corebankingservice;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -13,6 +16,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import thitkho.corebankingservice.common.dto.external.customer.CustomerInfo;
+import thitkho.corebankingservice.common.exception.BusinessException;
 import thitkho.corebankingservice.config.JpaAuditingConfiguration;
 import thitkho.corebankingservice.generator.AccountNumberGenerator;
 import thitkho.corebankingservice.integration.customer.CustomerGateway;
@@ -23,6 +27,8 @@ import thitkho.corebankingservice.service.impl.AccountServiceImpl;
 import thitkho.corebankingservice.support.PostgresTestConfiguration;
 
 import javax.sql.DataSource;
+import java.time.Instant;
+import java.sql.Timestamp;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -97,5 +103,74 @@ class AccountApiPersistenceTest {
         } finally {
             jdbcTemplate.execute("alter table account_status_history drop constraint reject_test_opening");
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"ACTIVE,ACTIVE", "ACTIVE,FROZEN", "ACTIVE,CLOSED",
+            "SUSPENDED,ACTIVE", "SUSPENDED,FROZEN", "SUSPENDED,CLOSED",
+            "CLOSED,ACTIVE", "CLOSED,FROZEN", "CLOSED,CLOSED"})
+    void getAccountAndBalance_ownerCanReadRegardlessOfCustomerAndAccountState(String customerStatus, String accountStatus) {
+        var created = accountService.openAccount(ProductType.CHECKING, "VND", accessToken);
+        Instant closedAt = "CLOSED".equals(accountStatus) ? Instant.parse("2026-11-18T03:00:00Z") : null;
+        jdbcTemplate.update("update accounts set status = ?, closed_at = ?, balance = ? where id = ?",
+                accountStatus, closedAt == null ? null : Timestamp.from(closedAt), 125000L, created.id());
+        given(customerGateway.findCurrentCustomer(accessToken)).willAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return Optional.of(new CustomerInfo(customerId, customerStatus));
+        });
+
+        var details = accountService.getOwnedAccount(created.id(), accessToken);
+        var balance = accountService.getOwnedAccountBalance(created.id(), accessToken);
+
+        assertThat(details.status().name()).isEqualTo(accountStatus);
+        assertThat(details.closedAt()).isEqualTo(closedAt);
+        assertThat(details.balanceMinor()).isEqualTo("125000");
+        assertThat(balance.status().name()).isEqualTo(accountStatus);
+        assertThat(balance.balanceMinor()).isEqualTo("125000");
+        assertThat(balance.minorUnit()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-customer", "missing-account", "system-account", "other-owner"})
+    void getAccountAndBalance_inaccessibleResource_hasSameNotFoundResponse(String scenario) {
+        UUID accountId = UUID.fromString("20000000-0000-0000-0000-000000000099");
+        if ("system-account".equals(scenario)) {
+            accountId = jdbcTemplate.queryForObject("select id from accounts where account_number = 'SYS-CASH-VND'", UUID.class);
+        } else if (!"missing-account".equals(scenario)) {
+            accountId = accountService.openAccount(ProductType.CHECKING, "VND", accessToken).id();
+        }
+        if ("missing-customer".equals(scenario)) {
+            given(customerGateway.findCurrentCustomer(accessToken)).willReturn(Optional.empty());
+        } else if ("other-owner".equals(scenario)) {
+            given(customerGateway.findCurrentCustomer(accessToken)).willReturn(Optional.of(new CustomerInfo(
+                    UUID.fromString("10000000-0000-0000-0000-000000000002"), "ACTIVE")));
+        }
+
+        assertAccountHidden(accountId);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SUSPENDED", "CLOSED"})
+    void openAccount_inactiveCustomer_doesNotPersistAccountOrHistory(String status) {
+        given(customerGateway.findCurrentCustomer(accessToken)).willReturn(Optional.of(new CustomerInfo(customerId, status)));
+
+        assertThatThrownBy(() -> accountService.openAccount(ProductType.CHECKING, "VND", accessToken))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo("CUSTOMER_NOT_ELIGIBLE"));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from accounts where account_type = 'CUSTOMER'", Long.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from account_status_history", Long.class)).isZero();
+    }
+
+    private void assertAccountHidden(UUID accountId) {
+        assertThatThrownBy(() -> accountService.getOwnedAccount(accountId, accessToken))
+                .isInstanceOfSatisfying(BusinessException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo("ACCOUNT_NOT_FOUND");
+                    assertThat(exception.getStatus().value()).isEqualTo(404);
+                });
+        assertThatThrownBy(() -> accountService.getOwnedAccountBalance(accountId, accessToken))
+                .isInstanceOfSatisfying(BusinessException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo("ACCOUNT_NOT_FOUND");
+                    assertThat(exception.getStatus().value()).isEqualTo(404);
+                });
     }
 }
