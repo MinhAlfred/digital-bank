@@ -1,5 +1,7 @@
 package thitkho.corebankingservice.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,8 @@ class AccountController {
     }
 
     @PostMapping
+    @Operation(summary = "Open an account for the current customer")
+    @ApiResponse(responseCode = "201", description = "Account created", useReturnTypeSchema = true)
     ResponseEntity<AccountResponse> create(@AuthenticationPrincipal Jwt jwt,
                                            @Valid @RequestBody CreateAccountRequest request) {
         AccountResponse accountResponse = accountService.openAccount(request.productType(), request.currency(), jwt.getTokenValue());
@@ -38,12 +42,14 @@ class AccountController {
     }
 
     @GetMapping(AccountApiConstants.ACCOUNT_PATH)
+    @Operation(summary = "Get an account owned by the current customer")
     ResponseEntity<AccountResponse> getAccount(@PathVariable UUID accountId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .body(accountService.getOwnedAccount(accountId, jwt.getTokenValue()));
     }
 
     @GetMapping(AccountApiConstants.BALANCE_PATH)
+    @Operation(summary = "Get the balance of an account owned by the current customer")
     ResponseEntity<AccountBalanceResponse> getBalance(@PathVariable UUID accountId, @AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
                 .body(accountService.getOwnedAccountBalance(accountId, jwt.getTokenValue()));

@@ -18,21 +18,19 @@ security/handler/SecurityProblemHandler.java         # xử lý lỗi trong secu
 
 ## Cấu hình và chạy local
 
-`application.yml` là cấu hình local đang được git-ignore trong dự án. Mẫu không chứa secret thật nằm ở [application.yml.example](../customer-service/src/main/resources/application.yml.example). Với checkout mới, sao chép mẫu; với file local đã có, giữ các giá trị kết nối và bổ sung cấu hình còn thiếu.
+`application.yml` được theo dõi trong Git và chỉ chứa cấu hình chung cùng tham chiếu biến môi trường. `application-local.yml` cung cấp địa chỉ localhost; `application-prod.yml` dùng cấu hình triển khai. Xem [cấu hình môi trường](configuration.md); không cần sao chép file mẫu.
 
 Từ repository root, chuẩn bị PostgreSQL:
 
 ```powershell
 docker compose up -d customer-postgres
 Set-Location customer-service
-if (-not (Test-Path src/main/resources/application.yml)) {
-    Copy-Item src/main/resources/application.yml.example src/main/resources/application.yml
-}
 ```
 
-Chỉ chạy `Copy-Item` khi chưa có file local; không ghi đè cấu hình cá nhân. Đặt các biến môi trường trong shell chạy ứng dụng:
+Chọn profile và đặt các biến môi trường trong shell chạy ứng dụng:
 
 ```powershell
+$env:SPRING_PROFILES_ACTIVE = 'local'
 $env:DB_USERNAME = '<database-user>'
 $env:DB_PASSWORD = '<database-password>'
 $env:APP_SECURITY_JWT_SECRET = '<shared-HS256-key-at-least-32-characters>'
@@ -41,7 +39,7 @@ $env:APP_SECURITY_JWT_AUDIENCE = '<expected-audience>'
 .\mvnw.cmd spring-boot:run
 ```
 
-DB mặc định của mẫu là `localhost:5437/customer_db`; dùng credential local theo Docker Compose hoặc DB của bạn. Có thể đặt `DB_URL`, `KAFKA_BOOTSTRAP_SERVERS`. Bước này không có producer/listener nghiệp vụ Kafka; không cần Kafka để tạo hoặc đọc Customer, nhưng context test có sẵn vẫn khởi động Kafka riêng bằng Testcontainers.
+DB mặc định của profile `local` là `localhost:5437/customer_db`; dùng credential local theo Docker Compose hoặc DB của bạn. Có thể đặt `DB_URL`, `KAFKA_BOOTSTRAP_SERVERS`; profile `prod` yêu cầu cả hai biến này. Bước này không có producer/listener nghiệp vụ Kafka; không cần Kafka để tạo hoặc đọc Customer, nhưng context test có sẵn vẫn khởi động Kafka riêng bằng Testcontainers.
 
 JWT dùng HS256, secret UTF-8 thô, không giải mã Base64. Token phải được ký bằng đúng key và có issuer, audience, thời hạn, subject hợp lệ. Subject là chuỗi opaque không trắng, tối đa 100 ký tự; không cần là UUID. Chưa có endpoint cấp token trong phạm vi này. Key, issuer và audience phải thống nhất với bên cấp token; đồng bộ toàn Gateway/Core là bước 7.
 

@@ -56,12 +56,12 @@ spring:
         simple:
           instances:
             customer-service:
-              - uri: ${CUSTOMER_SERVICE_URI:http://localhost:4001}
+              - uri: ${CUSTOMER_SERVICE_URI}
             core-banking-service:
-              - uri: ${CORE_BANKING_SERVICE_URI:http://localhost:4000}
+              - uri: ${CORE_BANKING_SERVICE_URI}
             notification-service:
-              - uri: ${NOTIFICATION_SERVICE_URI:http://localhost:4002}
+              - uri: ${NOTIFICATION_SERVICE_URI}
             fraud-detection-service:
-              - uri: ${FRAUD_DETECTION_SERVICE_URI:http://localhost:4003}
+              - uri: ${FRAUD_DETECTION_SERVICE_URI}
             analysis-service:
-              - uri: ${ANALYSIS_SERVICE_URI:http://localhost:4004}
+              - uri: ${ANALYSIS_SERVICE_URI}

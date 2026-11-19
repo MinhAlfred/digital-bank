@@ -1,5 +1,7 @@
 package thitkho.customerservice.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +28,8 @@ class CustomerController {
     }
 
     @PostMapping
+    @Operation(summary = "Register the authenticated user as a customer")
+    @ApiResponse(responseCode = "201", description = "Customer created", useReturnTypeSchema = true)
     ResponseEntity<CustomerResponse> create(@AuthenticationPrincipal Jwt jwt,
                                             @Valid @RequestBody CreateCustomerRequest request) {
         return ResponseEntity.created(URI.create("/api/customers/me")).cacheControl(CacheControl.noStore())
@@ -33,6 +37,7 @@ class CustomerController {
     }
 
     @GetMapping("/me")
+    @Operation(summary = "Get the current customer")
     ResponseEntity<CustomerResponse> getCurrent(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(customerService.getCurrent(jwt.getSubject()));
     }

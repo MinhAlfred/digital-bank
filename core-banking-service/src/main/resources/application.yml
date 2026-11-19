@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: core-banking-service
+  profiles:
+    default: prod
+  mvc:
+    problemdetails:
+      enabled: true
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: core-banking-group
+
+server:
+  port: 4000
+
+app:
+  security:
+    jwt:
+      secret: ${APP_SECURITY_JWT_SECRET}
+      issuer: ${APP_SECURITY_JWT_ISSUER}
+      audience: ${APP_SECURITY_JWT_AUDIENCE}
+  customer-service:
+    base-url: ${APP_CUSTOMER_SERVICE_BASE_URL}
+    connect-timeout: ${APP_CUSTOMER_SERVICE_CONNECT_TIMEOUT:2s}
+    read-timeout: ${APP_CUSTOMER_SERVICE_READ_TIMEOUT:30s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+    disable-swagger-default-url: true
+  paths-to-match: /api/**

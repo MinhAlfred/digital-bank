@@ -1,0 +1,7 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/test_db
+    username: test-only-user
+    password: test-only-password
+  kafka:
+    bootstrap-servers: localhost:9092

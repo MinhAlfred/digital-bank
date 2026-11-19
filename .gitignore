@@ -23,8 +23,12 @@
 hs_err_pid*
 replay_pid*
 
-# Local application configuration
-**/src/main/resources/application.yml
+# Private environment values and local configuration backups
+.env
+.env.*
+!.env.example
+/.local/
+**/src/main/resources/application-private.yml
 
 # Local IntelliJ IDEA compiler configuration
 /.idea/compiler.xml

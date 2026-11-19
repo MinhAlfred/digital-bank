@@ -1,0 +1,22 @@
+spring:
+  cloud:
+    discovery:
+      client:
+        simple:
+          instances:
+            customer-service:
+              - uri: ${CUSTOMER_SERVICE_URI:http://localhost:4001}
+            core-banking-service:
+              - uri: ${CORE_BANKING_SERVICE_URI:http://localhost:4000}
+            notification-service:
+              - uri: ${NOTIFICATION_SERVICE_URI:http://localhost:4002}
+            fraud-detection-service:
+              - uri: ${FRAUD_DETECTION_SERVICE_URI:http://localhost:4003}
+            analysis-service:
+              - uri: ${ANALYSIS_SERVICE_URI:http://localhost:4004}
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true

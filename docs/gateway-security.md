@@ -20,19 +20,19 @@ Gateway keeps JJWT and its reactive pipeline; Core and Customer use servlet Spri
 
 Gateway previously used Base64-decoded `jwt.secret`; Core used `app.security.jwt-secret` without issuer/audience checks. Both now use **`app.security.jwt.secret`, `.issuer`, `.audience`**, matching Customer. The key is raw UTF-8, not Base64-decoded. Update the applications and the trusted token issuer together; old tokens missing the required claims are rejected.
 
-Safe examples are tracked at:
+Shared configuration is tracked at:
 
-- `gateway-service/src/main/resources/application.yml.example`
-- `core-banking-service/src/main/resources/application.yml.example`
-- `customer-service/src/main/resources/application.yml.example`
+- `gateway-service/src/main/resources/application.yml`
+- `core-banking-service/src/main/resources/application.yml`
+- `customer-service/src/main/resources/application.yml`
 
-Merge them into your local configuration while preserving unrelated settings. Actual `application.yml` files remain Git-ignored. Environment variables override legacy local values. Test signing keys are only for tests. Core's local Compose database is `localhost:5433/core_banking_db`; Customer's is `localhost:5437/customer_db`.
+These files contain environment-variable references, never real credentials. Select `local` for localhost endpoints or `prod` for deployment-provided URLs; `prod` is the default profile. See [configuration and environments](configuration.md) and [.env.example](../.env.example). Test signing keys are only for tests. Core's local Compose database is `localhost:5433/core_banking_db`; Customer's is `localhost:5437/customer_db`.
 
 Gateway also needs `GATEWAY_INTERNAL_SECRET` (`gateway.internal-secret`). This compatibility header is sanitized and set by Gateway, but does not replace backend JWT validation.
 
 ## Protected routes
 
-Routes, service destinations, filter settings, ordering and timeouts are defined in the tracked `gateway-service/src/main/resources/gateway-routes.yml`. Local `application.yml` imports it:
+Routes, service destination variables, filter settings, ordering and timeouts are defined in the tracked `gateway-service/src/main/resources/gateway-routes.yml`. Gateway's `application.yml` imports it:
 
 ```yaml
 spring:
@@ -40,7 +40,7 @@ spring:
     import: classpath:gateway-routes.yml
 ```
 
-Keep route and service-instance definitions in this imported file, rather than duplicating them in local configuration. The application example and test profile use the same import. Java implements authentication filters but no longer declares service routes or service-specific URL properties.
+Keep route definitions in this imported file. Its service destinations are required environment variables in production; the `local` and test profiles supply localhost defaults. Java implements authentication filters but no longer declares service routes or service-specific URL properties.
 
 | Incoming path | Default destination | Override |
 |---|---|---|

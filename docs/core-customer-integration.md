@@ -14,7 +14,7 @@ app:
     read-timeout: 30s
 ```
 
-These are also the defaults when no overrides are provided. Merge this block into Core's existing local `application.yml`, or override it with `APP_CUSTOMER_SERVICE_BASE_URL`, `APP_CUSTOMER_SERVICE_CONNECT_TIMEOUT` and `APP_CUSTOMER_SERVICE_READ_TIMEOUT`. Replace the earlier local URL using port `8081` with port `4001`. Local configuration remains ignored by Git. Use HTTPS when traffic leaves the local development environment.
+The `local` profile supplies the localhost URL. Override it with `APP_CUSTOMER_SERVICE_BASE_URL`, `APP_CUSTOMER_SERVICE_CONNECT_TIMEOUT` and `APP_CUSTOMER_SERVICE_READ_TIMEOUT`. Production requires `APP_CUSTOMER_SERVICE_BASE_URL`. Application YAML is tracked with environment-variable references; see [configuration and environments](configuration.md). Use HTTPS when traffic leaves the local development environment.
 
 The base URL must be HTTP(S), have a host, and omit credentials, query and fragment. Timeouts must be at least 1 ms. HTTP redirects are disabled so a downstream response cannot redirect the forwarded token. The adapter adds no retries.
 

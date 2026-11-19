@@ -1,8 +1,13 @@
 spring:
   application:
     name: customer-service
+  profiles:
+    default: prod
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5437/customer_db}
+    url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
   jpa:
@@ -11,20 +16,13 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
-    baseline-on-migrate: true
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
     consumer:
       group-id: customer-group
 
 server:
   port: 4001
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
 
 app:
   security:
@@ -33,8 +31,23 @@ app:
       issuer: ${APP_SECURITY_JWT_ISSUER}
       audience: ${APP_SECURITY_JWT_AUDIENCE}
 
-# Hibernate's SQL error messages may contain duplicate email values.
-# Errors are translated into sanitized ProblemDetail by the application.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
 logging:
   level:
     org.hibernate.orm.jdbc.error: "OFF"
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+    disable-swagger-default-url: true
+  paths-to-match: /api/**
